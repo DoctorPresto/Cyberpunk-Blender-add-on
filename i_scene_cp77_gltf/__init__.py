@@ -21,6 +21,7 @@ from .main.exporters import *
 from .main.common import json_ver_validate
 from .main.collisions import CP77CollisionGen
 from .main.animtools import play_anim 
+from . import addon_updater_ops
 
 
 bl_info = {
@@ -36,16 +37,58 @@ bl_info = {
 
 ### plugin preferences class to allow for personalized used settings - this needs to be commented out 
 ### or hooked up to something
+@addon_updater_ops.make_annotations
 class CP77IOSuitePreferences(bpy.types.AddonPreferences):
-    bl_idname = __package__
+    bl_idname = __name__
+
     experimental_features: bpy.props.BoolProperty(
     name= "Enable Experimental Features",
     description="Experimental Features for Mod Developers, may encounter bugs",
     default=False,
     )
+
+    auto_check_update = bpy.props.BoolProperty(
+        name = "Auto-check for Update",
+        description = "If enabled, auto-check for updates using an interval",
+        default=False,
+        
+    )
+
+    updater_interval_months = bpy.props.IntProperty(
+        name='Months',
+        description = "Number of months between checking for updates",
+        default=12,
+        min=0,
+        #options = 'HIDDEN',
+    )
+    updater_interval_days = bpy.props.IntProperty(
+        name='Days',
+        description = "Number of days between checking for updates",
+        default=7,
+        min=0,
+
+    )
+    updater_interval_hours = bpy.props.IntProperty(
+        name='Hours',
+        description = "Number of hours between checking for updates",
+        default=96,
+        min=0,
+        max=23,
+
+    )
+    updater_interval_minutes = bpy.props.IntProperty(
+        name='Minutes',
+        description = "Number of minutes between checking for updates",
+        default=100,
+        min=0,
+        max=59,
+
+    )
+
     def draw(self, context):
         layout = self.layout
         layout.prop(self, "experimental_features")
+        addon_updater_ops.update_settings_ui(self,context)
 
 
 def SetCyclesRenderer(set_gi_params=False):
@@ -683,18 +726,19 @@ class CP77Import(bpy.types.Operator,ImportHelper):
                         index = index + 1
                         
         return {'FINISHED'}
+    
+       
 
 def menu_func_import(self, context):
     self.layout.operator(CP77Import.bl_idname, text="Cyberpunk GLTF (.gltf/.glb)", icon_value=custom_icon_col["import"]['WKIT'].icon_id)
     self.layout.operator(CP77EntityImport.bl_idname, text="Cyberpunk Entity (.json)", icon_value=custom_icon_col["import"]['WKIT'].icon_id)
     self.layout.operator(CP77StreamingSectorImport.bl_idname, text="Cyberpunk StreamingSector", icon_value=custom_icon_col["import"]['WKIT'].icon_id)
 
+
 def menu_func_export(self, context):
     self.layout.operator(CP77GLBExport.bl_idname, text="Export Selection to GLB for Cyberpunk", icon_value=custom_icon_col["import"]['WKIT'].icon_id)
     
 
-
-    
 #kwekmaster - Minor Refactoring 
 classes = (
     CP77Import,
@@ -719,33 +763,39 @@ classes = (
     CP77_PT_CollisionToolsPanelProps,
     )
 
+
 def register():
     custom_icon = bpy.utils.previews.new()
     custom_icon.load("WKIT", os.path.join(icons_dir, "wkit.png"), 'IMAGE')
     custom_icon_col["import"] = custom_icon
+    addon_updater_ops.register(bl_info)
 
 
     #kwekmaster - Minor Refactoring 
     for cls in classes:
         bpy.utils.register_class(cls)
-        
+
     bpy.types.Scene.selected_armature = bpy.props.EnumProperty(items=CP77ArmatureList)
     bpy.types.Scene.cp77_collision_tools_panel_props = bpy.props.PointerProperty(type=CP77_PT_CollisionToolsPanelProps)           
     bpy.types.TOPBAR_MT_file_import.append(menu_func_import)
     bpy.types.TOPBAR_MT_file_export.append(menu_func_export) 
 
-
+  
 def unregister():
     bpy.utils.previews.remove(custom_icon_col["import"])
     del bpy.types.Scene.cp77_collision_tools_panel_props
     del bpy.types.Scene.selected_armature
+    
 
     #kwekmaster - Minor Refactoring 
     for cls in classes:
         bpy.utils.unregister_class(cls)
         
+    addon_updater_ops.unregister()
+
     bpy.types.TOPBAR_MT_file_import.remove(menu_func_import)
     bpy.types.TOPBAR_MT_file_export.remove(menu_func_export)
+    
 
 if __name__ == "__main__":
     register()
