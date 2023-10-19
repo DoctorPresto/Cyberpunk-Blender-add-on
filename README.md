@@ -8,19 +8,23 @@ The Cyberpunk Blender add-on offers a suite of import/export options, tools and 
 
 ![blender add-on yaiba exampe](https://github.com/WolvenKit/Cyberpunk-Blender-add-on/assets/65016231/fffb9aab-c5f0-4f77-9a63-bdbee941708e)
 
-# Import functions:
+-Import functions:
 
--Import Cyberpunk 2077 models with materials for fully automated setup of the games complex shaders in just a few clicks
+- Import Cyberpunk 2077 models with materials for fully automated setup of the games complex shaders in just a few clicks
 
 - Import full characters and vehicles from Cyberpunk 2077 entity files with all their mesh files correctly distributed, matching their in game appearance
 
-- Import Cyberpunk 2077 animations to play on your models exported with rigs, or take advantage of the bundled rig resources conveniently available at the press of a button in the Cyberpunk Animations Panel
+- Import vehicle entity colliders from Wolvenkit exported .phys files for easy visualization and editing
 
-- Import vehicle entity colliders from Wolvenkit exported .phys files for easy visualization and editing 
+- Import Cyberpunk 2077 animations to play on your models exported with rigs, or take advantage of the bundled rig resources conveniently available at the press of a button in the Cyberpunk Animations Panel
 
 - Import Cyberpunk 2077 level data (streaming sectors)
 
-- Export glTF models with optimized export options for use with WolvenKit for Cyberpunk 2077 
+-Export Functions:
+
+- Export glTF models with optimized export options to ensure compatibility in game. Export includes checks for common issues and provides automatic or simplified solutions. 
+
+- Export edited shapekeys,  animations back to glb 
 
 ---
 
