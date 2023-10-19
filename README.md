@@ -14,7 +14,7 @@ The Cyberpunk Blender add-on integrates with files created by WolvenKit to strea
 
 - Import full characters and vehicles from Cyberpunk 2077 entity files with mesh files correctly distributed, matching their in game appearance
 
-    - Import colliders from Wolvenkit exported .phys files for easy visualization and editing
+- Import colliders from Wolvenkit exported .phys files for easy visualization and editing
 
 - Import Cyberpunk 2077 animations to play on your models exported with rigs, or take advantage of the bundled rig resources conveniently available at the press of a button in the Cyberpunk Animations Panel
 
