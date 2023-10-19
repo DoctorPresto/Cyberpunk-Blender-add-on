@@ -26,6 +26,10 @@ The Cyberpunk Blender add-on integrates with files created by WolvenKit to strea
 
 - Export edited shapekeys,  animations back to glb 
 
+## Tools and Shortcuts:
+
+-
+
 ---
 
 # Requirements
