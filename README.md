@@ -2,7 +2,7 @@
 
 ![blender add-on banner panam](https://github.com/WolvenKit/Cyberpunk-Blender-add-on/assets/65016231/a0489b07-68af-4a90-b53e-1ad3ef271f4a)
 
-The Cyberpunk Blender add-on offers a suite of import/export options, tools and convenience shortcuts designed to simplify and enhance a mod authors workflow. The add-on integrates seamlessly with files created by WolvenKit. To learn more about WolvenKit visit the [dedicated WolvenKit wiki.](https://wiki.redmodding.org/wolvenkit)
+The Cyberpunk Blender add-on integrates with files created by WolvenKit to streamline the import/export and modifcation of 3D assets from Cyberpunm 2077. To learn more about WolvenKit visit the [dedicated WolvenKit wiki.](https://wiki.redmodding.org/wolvenkit)
 
 # Features
 
@@ -12,9 +12,9 @@ The Cyberpunk Blender add-on offers a suite of import/export options, tools and 
 
 - Import Cyberpunk 2077 models with materials for fully automated setup of the games complex shaders in just a few clicks
 
-- Import full characters and vehicles from Cyberpunk 2077 entity files with all their mesh files correctly distributed, matching their in game appearance
+- Import full characters and vehicles from Cyberpunk 2077 entity files with mesh files correctly distributed, matching their in game appearance
 
-- Import vehicle entity colliders from Wolvenkit exported .phys files for easy visualization and editing
+    - Import colliders from Wolvenkit exported .phys files for easy visualization and editing
 
 - Import Cyberpunk 2077 animations to play on your models exported with rigs, or take advantage of the bundled rig resources conveniently available at the press of a button in the Cyberpunk Animations Panel
 
