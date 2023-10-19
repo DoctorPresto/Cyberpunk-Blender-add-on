@@ -2,15 +2,21 @@
 
 ![blender add-on banner panam](https://github.com/WolvenKit/Cyberpunk-Blender-add-on/assets/65016231/a0489b07-68af-4a90-b53e-1ad3ef271f4a)
 
-The Cyberpunk Blender add-on is designed to fully automate the shader setup for Cyberpunk 2077 mesh files. The add-on integrates with files created by WolvenKit. To learn more about WolvenKit visit the [dedicated WolvenKit wiki.](https://wiki.redmodding.org/wolvenkit)
+The Cyberpunk Blender add-on offers a suite of import/export options, tools and convenience shortcuts designed to simplify and enhance a mod authors workflow. The add-on integrates seamlessly with files created by WolvenKit. To learn more about WolvenKit visit the [dedicated WolvenKit wiki.](https://wiki.redmodding.org/wolvenkit)
 
 # Features
 
 ![blender add-on yaiba exampe](https://github.com/WolvenKit/Cyberpunk-Blender-add-on/assets/65016231/fffb9aab-c5f0-4f77-9a63-bdbee941708e)
 
-- Import Cyberpunk 2077 models and their complex shaders with just a few clicks
+# Import functions:
 
-- Import Cyberpunk 2077 entity files such as vehicles with mesh files correctly distributed to match their in game appearance
+-Import Cyberpunk 2077 models with materials for fully automated setup of the games complex shaders in just a few clicks
+
+- Import full characters and vehicles from Cyberpunk 2077 entity files with all their mesh files correctly distributed, matching their in game appearance
+
+- Import Cyberpunk 2077 animations to play on your models exported with rigs, or take advantage of the bundled rig resources conveniently available at the press of a button in the Cyberpunk Animations Panel
+
+- Import vehicle entity colliders from Wolvenkit exported .phys files for easy visualization and editing 
 
 - Import Cyberpunk 2077 level data (streaming sectors)
 
