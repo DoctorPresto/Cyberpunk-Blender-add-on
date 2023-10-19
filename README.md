@@ -4,7 +4,7 @@
 
 The Cyberpunk IO Suite integrates with files created by WolvenKit to streamline the import/export and modifcation of 3D assets from Cyberpunm 2077. 
 
-To learn more about modding Cyberpunk 2077 visit [the Cyberpunk Modding wiki.](https://wiki.redmodding.org/cyberpunk-2077-modding/for-mod-creators/references-lists-and-overviews/assets)
+To learn more about modding Cyberpunk 2077 visit [the Cyberpunk Modding wiki.](https://wiki.redmodding.org/cyberpunk-2077-modding)
 
 
 To learn more about WolvenKit visit the [dedicated WolvenKit wiki.](https://wiki.redmodding.org/wolvenkit)
