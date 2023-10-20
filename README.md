@@ -27,13 +27,28 @@ To learn more about WolvenKit visit the [dedicated WolvenKit wiki.](https://wiki
 
 ## Export Functions:
 
-- Export glTF models with optimized export options to ensure compatibility in game. Export includes checks for common issues and provides automatic or simplified solutions. 
+- Export meshes, including shapekeys to glb with optimized export options to ensure compatibility in game. Our exporter includes checks for common issues and provides automatic or simplified solutions. 
+
+- Export modified vehicle collision shapes to .phys
 
 - Export edited shapekeys,  animations back to glb 
 
 ## Tools and Shortcuts:
 
--
+- Animation Tools Panel
+    - anims panel stuff
+
+- Mesh Tools Panel
+    - refitter
+    - weight transfers
+    - the other things 
+
+- Collision Tools and Generator
+    - description of this
+
+- Material Exports
+    - .hp
+    - .mlsetup(experiment)
 
 ---
 
@@ -43,7 +58,7 @@ To learn more about WolvenKit visit the [dedicated WolvenKit wiki.](https://wiki
 <br>**Blender** version 3.1 or higher is *required*
 <br>https://www.blender.org/<br/>
 
-2) **WolvenKit** version 8.9.0 or higher
+2) **WolvenKit** version 8.10.0 or higher
 <br>https://github.com/WolvenKit/WolvenKit<br/>
 
 ---
@@ -72,6 +87,8 @@ To learn more about WolvenKit visit the [dedicated WolvenKit wiki.](https://wiki
 
 2) Navigate within Blender to **File \ Import \ Cyberpunk Entity** and select the exported json file. You can enter the appearance you want in the import options, this requires the appearanceName from the entity appearances info. Enter ALL for all appearances.
 
+3) To import .phys collisions along with a vehicle ent, ensure you have converted the .phys to .json in Wolvenkit and check the "Import Collisions" box.
+
 ## Streaming Sector Import
 
 1) Convert the streaming sectors you want to import from WolvenKit as json, and export all the meshes used using WolvenKit, a wscript to automate this is available on Discord in the wolvenkit-scripts channel.
@@ -88,8 +105,7 @@ To learn more about WolvenKit visit the [dedicated WolvenKit wiki.](https://wiki
 
 The plugin will automatically apply the correct settings to ensure your mesh imports back into WolvenKit for use with your mod.
 
-## Export Animations For Photomode
-**Should work for all types of animation 
+## Export Animations
 
 1) Follow the community guides in order to import your anims to Blender and make the necessary edits
 2) Select the armature which contains the animations you'd like to export
