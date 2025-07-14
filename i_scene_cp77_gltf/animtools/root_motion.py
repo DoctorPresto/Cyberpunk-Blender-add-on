@@ -1,5 +1,5 @@
 import time
-
+from ..main.bartmoss_functions import *
 import bpy
 import mathutils
 
@@ -213,7 +213,7 @@ class CP77Remove_ref_character(bpy.types.Operator):
 
 
 class PANEL_PT_main_panel(bpy.types.Panel):
-    bl_idname = "PANEL_PT_root_motionist_main"
+    bl_idname = "cp77_root_motion"
     bl_label = "Root Motion"
     bl_category = "CP77 Modding"
     bl_space_type = "VIEW_3D"
@@ -246,24 +246,6 @@ class PANEL_PT_main_panel(bpy.types.Panel):
         col.operator("remove_root_motion.cp77", text="Animate In-Place")
 
         layout.operator("rm_remove_ref_char.cp77", text="Delete Ref Character")
-
-
-def valid_armature(context):
-    skel = context.active_object
-    if skel is not None and skel.type == 'ARMATURE':
-        if len(skel.pose.bones) >= 2:
-            if skel.animation_data.action is not None:
-                return skel
-    return None
-
-
-def world_mtx(armature, bone):
-    return armature.convert_space(bone, bone.matrix, from_space='POSE', to_space='WORLD')
-
-
-def pose_mtx(armature, bone, mat):
-    return armature.convert_space(bone, mat, from_space='WORLD', to_space='POSE')
-
 
 def debug_character(context, original):
     char = bpy.data.objects.get(context.scene.rm_data.copy)
