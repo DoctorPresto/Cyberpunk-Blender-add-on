@@ -13,7 +13,11 @@ rig_dir = get_rig_dir()
 physmats_data = physmat_list()
 enum_items = [(mat.get("Name", ""), mat.get("Name", ""), "") for mat in physmats_data]
 
-
+ 
+def CP77animBones():
+    animBones = ["Hips", "Spine", "Spine1", "Spine2", "Spine3", "LeftShoulder", "LeftArm", "LeftForeArm", "LeftHand", "WeaponLeft", "LeftInHandThumb", "LeftHandThumb1", "LeftHandThumb2", "LeftInHandIndex", "LeftHandIndex1", "LeftHandIndex2", "LeftHandIndex3", "LeftInHandMiddle", "LeftHandMiddle1", "LeftHandMiddle2", "LeftHandMiddle3", "LeftInHandRing", "LeftHandRing1", "LeftHandRing2", "LeftHandRing3", "LeftInHandPinky", "LeftHandPinky1", "LeftHandPinky2", "LeftHandPinky3", "RightShoulder", "RightArm", "RightForeArm", "RightHand", "WeaponRight", "RightInHandThumb", "RightHandThumb1", "RightHandThumb2", "RightInHandIndex", "RightHandIndex1", "RightHandIndex2", "RightHandIndex3", "RightInHandMiddle", "RightHandMiddle1", "RightHandMiddle2", "RightHandMiddle3", "RightInHandRing", "RightHandRing1", "RightHandRing2", "RightHandRing3", "RightInHandPinky", "RightHandPinky1", "RightHandPinky2", "RightHandPinky3", "Neck", "Neck1", "Head", "LeftEye", "RightEye", "LeftUpLeg", "LeftLeg", "LeftFoot", "LeftHeel", "LeftToeBase", "RightUpLeg", "RightLeg", "RightFoot", "RightHeel", "RightToeBase"]
+    return animBones
+ 
 def CP77RefitList(context):
 
     Adonis = os.path.join(refit_dir, "adonis.refitter.zip")
@@ -48,7 +52,6 @@ def CP77RefitAddonList(context):
 
     # Return the list of tuples
     return addon_target_body_paths, addon_target_body_names
-
 
 def SetCyclesRenderer(use_cycles=True, set_gi_params=False):
     # set the render engine for all scenes to Cycles
@@ -108,7 +111,6 @@ def CP77ArmatureList(self, context):
         arms = []
     return arms
     
-
 class CP77_PT_PanelProps(PropertyGroup):
 # collision panel props:
     collision_type: EnumProperty(
