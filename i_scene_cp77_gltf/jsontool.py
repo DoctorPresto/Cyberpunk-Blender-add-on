@@ -241,4 +241,3 @@ class JSONTool:
         else:
             data = JSONTool.jsonload(os.path.join(DepotPath,path))
         return data
-
