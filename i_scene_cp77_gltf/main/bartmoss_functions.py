@@ -4,6 +4,110 @@ from math import radians
 import idprop
 import bmesh
 
+# Internal state for restoring
+_previous_selection = []
+_previous_active = None
+_previous_mode = None
+_dummy_name = "TemporaryContextObject"
+
+mode_map = {
+    'OBJECT': 'OBJECT',
+    'EDIT_ARMATURE': 'EDIT',
+    'POSE': 'POSE',
+    'EDIT_MESH': 'EDIT',
+    'EDIT_CURVE': 'EDIT',
+    'EDIT_CURVES': 'EDIT',
+    'EDIT_SURFACE': 'EDIT',
+    'EDIT_TEXT': 'EDIT',
+    'EDIT_METABALL': 'EDIT',
+    'EDIT_LATTICE': 'EDIT',
+    'EDIT_GREASE_PENCIL': 'EDIT',
+    'EDIT_POINT_CLOUD': 'EDIT',
+    'EDIT_GPENCIL': 'EDIT',
+    'SCULPT': 'OBJECT',
+    'SCULPT_CURVES': 'OBJECT',
+    'SCULPT_GPENCIL': 'OBJECT',
+    'SCULPT_GREASE_PENCIL': 'OBJECT',
+    'PAINT_WEIGHT': 'OBJECT',
+    'PAINT_VERTEX': 'OBJECT',
+    'PAINT_TEXTURE': 'OBJECT',
+    'PAINT_GPENCIL': 'OBJECT',
+    'PAINT_GREASE_PENCIL': 'OBJECT',
+    'WEIGHT_GPENCIL': 'OBJECT',
+    'WEIGHT_GREASE_PENCIL': 'OBJECT',
+    'VERTEX_GPENCIL': 'OBJECT',
+    'VERTEX_GREASE_PENCIL': 'OBJECT',
+    'PARTICLE': 'OBJECT',
+    }
+
+def safe_mode_switch(target_mode: str):
+    """
+    Safely switches to the given mode. Creates a temporary object if no valid context is available.
+    Stores selection, active object, and mode to restore later.
+    """
+    global _previous_selection, _previous_active, _previous_mode
+
+    ctx = bpy.context
+    _previous_mode = ctx.mode
+    _previous_selection = list(ctx.selected_objects)
+    _previous_active = ctx.active_object
+
+    # If the desired mode is already active, do nothing
+    if ctx.mode == target_mode:
+        return
+
+    # If context doesn't support mode switch, create a dummy
+    if not bpy.ops.object.mode_set.poll():
+        bpy.ops.object.select_all(action='DESELECT')
+        bpy.ops.mesh.primitive_cube_add(size=0.1, location=(0, 0, 0))
+        dummy = bpy.context.active_object
+        dummy.name = _dummy_name
+        dummy.hide_viewport = True
+        dummy.hide_render = True
+        dummy.hide_set(True)
+        dummy.select_set(False)
+
+    try:
+        bpy.ops.object.mode_set(mode=target_mode)
+    except Exception as e:
+        print(f"[safe_mode_switch] Failed to switch to mode {target_mode}: {e}")
+
+    if dummy:
+        bpy.data.objects.remove(dummy, do_unlink=True)
+
+def restore_previous_context():
+    """
+    Restores the previous selection, active object, and mode.
+    Removes any temporary dummy object that may have been created.
+    """
+    global _previous_selection, _previous_active, _previous_mode
+
+    bpy.ops.object.select_all(action='DESELECT')
+    for obj in _previous_selection:
+        if obj.name in bpy.data.objects:
+            obj.select_set(True)
+
+    if _previous_active and _previous_active.name in bpy.data.objects:
+        bpy.context.view_layer.objects.active = _previous_active
+
+    # Attempt to restore mode if possible
+    try:
+        if _previous_mode and get_safe_mode() != _previous_mode:
+            safe_mode_switch(_previous_mode)
+    except Exception as e:
+        print(f"[restore_previous_context] Failed to restore mode {_previous_mode}: {e}")
+
+    _previous_selection.clear()
+    _previous_active = None
+    _previous_mode = None
+
+def get_safe_mode():
+    """
+    Maps the current context mode to a valid mode string for bpy.ops.object.mode_set().
+    Returns one of: 'OBJECT', 'EDIT', 'POSE'.
+    """
+    return mode_map.get(bpy.context.mode, 'OBJECT')
+
 ## I get that these are lazy but they're convenient type checks
 def is_mesh(o: bpy.types.Object) -> bool:
     return isinstance(o.data, bpy.types.Mesh)
