@@ -121,10 +121,47 @@ class JSONTool:
             JSONTool._json_cache[base_name] = data
 
         match file_extension:
-            case '.anims.json' | '.app.json' | '.streamingblock.json' |  '.mesh.json' | '.gradient.json' | '.rig.json' | '.cfoliage.json' | '.hp.json' | '.streamingblock.json':
+            case '.anims.json' | '.app.json' | '.streamingblock.json' |  '.mesh.json' | '.gradient.json' | '.cfoliage.json' | '.hp.json' | '.streamingblock.json':
                 if has_error:
                     JSONTool.create_error(cp77_addon_prefs.non_verbose, base_name, file_extension, invalid_json_error, errorMessages)
                 return data
+            
+            case '.rig.json':
+                if has_error:
+                    JSONTool.create_error(cp77_addon_prefs.non_verbose, base_name, file_extension, invalid_phys_error, errorMessages)
+                    return 
+                rig_name = base_name.replace(".rig.json", "")
+                root = data.get("Data", {}).get("RootChunk", {})
+
+                # Extract raw bone names and handle potential missing '$value'
+                bone_names_raw = root.get("boneNames", [])
+                bone_names = [
+                    entry.get("$value", "")
+                    for entry in bone_names_raw
+                    if isinstance(entry, dict) and "$value" in entry
+                ]
+                
+                # Instantiate the RigData object with data from the JSON file.
+                rig_data = RigData(
+                    rig_name=rig_name,
+                    disable_connect=rig_name.startswith("v_"),
+                    apose_ms=root.get("aPoseMS", []),
+                    apose_ls=root.get("aPoseLS", []),
+                    bone_transforms=root.get("boneTransforms", []),
+                    bone_parents=root.get("boneParentIndexes", []),
+                    bone_names=bone_names,
+                    parts=root.get("parts", []),
+                    track_names=root.get("trackNames", []),
+                    reference_tracks=root.get("referenceTracks", []),
+                    cooking_platform=root.get("cookingPlatform", ""),
+                    distance_category_to_lod_map=root.get("distanceCategoryToLodMap", []),
+                    ik_setups=root.get("ikSetups", []),
+                    level_of_detail_start_indices=root.get("levelOfDetailStartIndices", []),
+                    ragdoll_desc=root.get("ragdollDesc", []),
+                    ragdoll_names=root.get("ragdollNames", [])
+                )
+
+                return rig_data
 
             case '.phys.json':
                 if has_error:

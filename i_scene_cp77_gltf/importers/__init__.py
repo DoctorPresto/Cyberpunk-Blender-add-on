@@ -13,7 +13,7 @@ from ..main.common import get_classes
 from ..cyber_props import *
 from ..cyber_prefs import *
 from ..icons.cp77_icons import *
-from .read_rig import create_rig_from_json
+from .read_rig import create_armature_from_data
 
 class CP77ImportRig(Operator):
     bl_idname = "import_scene.rig"
@@ -28,7 +28,7 @@ class CP77ImportRig(Operator):
     filepath: bpy.props.StringProperty(subtype="FILE_PATH")
 
     def execute(self, context):
-        create_rig_from_json(self.filepath)
+        create_armature_from_data(self.filepath)
         return {'FINISHED'}
 
     def invoke(self, context, event):
