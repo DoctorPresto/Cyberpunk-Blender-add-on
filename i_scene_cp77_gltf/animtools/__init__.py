@@ -10,6 +10,8 @@ from ..main.common import get_classes
 from ..importers.import_with_materials import CP77GLBimport
 from .animtools import *
 from .generate_rigs import create_rigify_rig
+from ..importers.read_rig import *
+
 
 def CP77AnimsList(self, context):
     for action in bpy.data.actions:
@@ -62,6 +64,11 @@ class CP77_PT_AnimsPanel(Panel):
             col.operator('bone_hider.cp77',text='Hide Deform Bones')
         col.operator('reset_armature.cp77')
         col.operator('delete_unused_bones.cp77', text='Delete unused bones')
+        if obj.get('T-Pose') and obj['T-Pose'] == False:
+            col.operator('cp77.load_aPose')
+        else:
+            if obj.get('T-Pose') and obj['T-Pose'] == True:
+                col.operator('cp77.load_TPose')
         col.operator('cp77.anim_namer')
         available_anims = list(CP77AnimsList(context,obj))
         active_action = obj.animation_data.action if obj.animation_data else None
@@ -151,6 +158,120 @@ class CP77AnimsDelete(Operator):
     def execute(self, context):
         delete_anim(self, context)
         return{'FINISHED'}
+
+
+class LoadAPose(Operator):
+    bl_idname = "cp77.load_aPose"
+    bl_label = "Load A-Pose"
+
+    def execute(self, context):
+        try:
+            arm_obj = context.object
+            if not arm_obj or arm_obj.type != 'ARMATURE':
+                self.report({'ERROR'}, "Select an armature object.")
+                return {'CANCELLED'}
+
+            arm_data = arm_obj.data
+            arm_data["T-Pose"] = False
+
+            # First always load single base A-pose
+            self.load_single_apose(arm_obj)
+
+            # Then load multi-source if any extensions exist
+            if "rig_sources" in arm_data and arm_data["rig_sources"]:
+                self.load_multi_source_apose(arm_obj)
+
+            return {'FINISHED'}
+
+        except Exception as e:
+            print(traceback.format_exc())
+            self.report({'ERROR'}, f"Failed: {e}")
+            return {'CANCELLED'}
+
+    def load_apose(self, arm_obj):
+        arm_data = arm_obj.data
+        arm_data["T-Pose"] = False
+        filepath = arm_data.get('source_rig_file', None)
+        bone_names = arm_data.get('boneNames', [])
+        bone_parents = arm_data.get('boneParentIndexes', [])
+
+        if not filepath:
+            self.report({'ERROR'}, "No source_rig_file found on armature.")
+            return
+
+        rig_data = JSONTool.jsonload(filepath)
+        apose_ms = rig_data.apose_ms
+        apose_ls = rig_data.apose_ls
+
+        pose_matrices = build_apose_matrices(apose_ms, apose_ls, bone_names, bone_parents)
+        if not pose_matrices:
+            self.report({'WARNING'}, "No A-Pose data found in single rig file.")
+            return
+
+        safe_mode_switch("EDIT")
+        edit_bones = arm_data.edit_bones
+
+        for i, name in enumerate(bone_names):
+            bone = edit_bones.get(name)
+            if not bone:
+                continue
+            mat_blender = convert_matrix_from_game_to_blender(pose_matrices[i])
+            apply_bone_from_matrix(bone, mat_blender)
+
+        safe_mode_switch("OBJECT")
+
+        self.report({'INFO'}, "A-Pose loaded (single rig mode).")
+
+
+class LoadTPose(Operator):
+    bl_idname = "cp77.load_tPose"
+    bl_label = "Load T-Pose"
+
+    def execute(self, context):
+        try:
+            arm_obj = context.object
+            if not arm_obj or arm_obj.type != 'ARMATURE':
+                self.report({'ERROR'}, "Select an armature object.")
+                return {'CANCELLED'}
+
+            arm_data = arm_obj.data
+            arm_data["T-Pose"] = True
+            filepath = arm_data.get('source_rig_file', None)
+            bone_names = arm_data.get('boneNames', [])
+            bone_parents = arm_data.get('boneParentIndexes', [])
+
+            if not filepath:
+                self.report({'ERROR'}, "No source rig file found on armature.")
+                return {'CANCELLED'}
+
+            # Load fresh data
+            rig_data = JSONTool.jsonload(filepath)
+            transforms = rig_data.bone_transforms
+
+            # Compute global transforms
+            global_transforms = {}
+            for i in range(len(transforms)):
+                compute_global_transform(i, transforms, bone_parents, global_transforms)
+
+            safe_mode_switch("EDIT")
+            edit_bones = arm_data.edit_bones
+
+            for i, name in enumerate(bone_names):
+                bone = edit_bones.get(name)
+                if not bone:
+                    continue
+                mat_blender = convert_matrix_from_game_to_blender(global_transforms[i])
+                apply_bone_from_matrix(bone, mat_blender)
+
+            restore_previous_context()
+
+            self.report({'INFO'}, f"BoneTransforms reloaded successfully from {filepath}")
+            return {'FINISHED'}
+
+        except Exception as e:
+            print(traceback.format_exc())
+            self.report({'ERROR'}, f"Failed: {e}")
+            return {'CANCELLED'}
 
 
 # this class is where most of the function is so far - play/pause
@@ -263,6 +384,7 @@ class CP77ResetArmature(Operator):
     def execute(self, context):
         reset_armature(self, context)
         return {"FINISHED"}
+
 
 class CP77DeleteUnusedBones(Operator):
     bl_idname = "delete_unused_bones.cp77"
