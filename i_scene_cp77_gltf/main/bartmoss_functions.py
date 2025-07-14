@@ -78,7 +78,7 @@ def safe_mode_switch(target_mode: str):
 def restore_previous_context():
     """
     Restores the previous selection, active object, and mode.
-    Removes any temporary dummy object that may have been created.
+    
     """
     global _previous_selection, _previous_active, _previous_mode
 
@@ -90,12 +90,14 @@ def restore_previous_context():
     if _previous_active and _previous_active.name in bpy.data.objects:
         bpy.context.view_layer.objects.active = _previous_active
 
-    # Attempt to restore mode if possible
-    try:
-        if _previous_mode and get_safe_mode() != _previous_mode:
-            safe_mode_switch(_previous_mode)
-    except Exception as e:
-        print(f"[restore_previous_context] Failed to restore mode {_previous_mode}: {e}")
+    if _previous_mode == get_safe_mode():
+        pass
+    else:
+        # Attempt to restore mode if possible
+        try:
+                safe_mode_switch(_previous_mode)
+        except Exception as e:
+            print(f"[CP77 Blender Addon] Failed to restore mode {_previous_mode}: {e}")
 
     _previous_selection.clear()
     _previous_active = None
