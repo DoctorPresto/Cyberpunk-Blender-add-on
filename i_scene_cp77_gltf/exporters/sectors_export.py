@@ -26,7 +26,6 @@
 # - sort out instanced bits
 
 import json
-import glob
 import os
 import bpy
 import copy
@@ -34,6 +33,7 @@ from ..main.common import *
 from mathutils import Vector, Matrix, Quaternion
 from os.path import join
 from ..cyber_props import *
+from ..main.bartmoss_functions import dataKrash
 
 def are_matrices_equal(mat1, mat2, tolerance=0.01):
     if len(mat1) != len(mat2):
@@ -399,8 +399,7 @@ def exportSectors(filename, use_yaml):
     #its currently set to output the modified jsons to an output folder in the project dir (create one before running)
     #you can change this to a path if you prefer
     xloutpath = os.path.join(project,'source','resources')
-    escaped_path = glob.escape(projpath)    
-    jsons = glob.glob(os.path.join(escaped_path, "**", "*.streamingsector.json"), recursive = True)
+    jsons = dataKrash(projpath, '.streamingsector.json')
 
     projpath = os.path.join(project,'source','raw','base')
     if len(jsons)<1:
