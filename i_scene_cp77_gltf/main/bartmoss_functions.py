@@ -86,7 +86,7 @@ def safe_mode_switch(target_mode: str):
     Stores selection, active object, and mode to restore later.
     """
     global _previous_selection, _previous_active, _previous_mode
-
+    dummy = None
     ctx = bpy.context
     _previous_mode = ctx.mode
     _previous_selection = list(ctx.selected_objects)
@@ -95,7 +95,7 @@ def safe_mode_switch(target_mode: str):
     # If the desired mode is already active, do nothing
     if ctx.mode == target_mode:
         return
-
+    
     # If context doesn't support mode switch, create a dummy
     if not bpy.ops.object.mode_set.poll():
         bpy.ops.object.select_all(action='DESELECT')
