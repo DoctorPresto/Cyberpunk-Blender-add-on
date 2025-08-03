@@ -4,7 +4,7 @@ import zipfile
 import os
 from .main.common import show_message, load_zip
 from pathlib import Path
-from typing import List, Any
+
 
 # Error messages for different file types
 invalid_json_error = "This plugin requires jsons generated using the latest version of Wolvenkit."
@@ -145,7 +145,6 @@ class JSONTool:
                 ]
                 
                 # Instantiate the RigData object with data from the JSON file.
-                from .main.datashards import RigData
                 rig_data = RigData(
                     rig_name=rig_name,
                     disable_connect=rig_name.startswith("v_"),
