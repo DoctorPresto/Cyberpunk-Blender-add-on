@@ -4,12 +4,44 @@ from typing import Dict, List
 from math import radians
 import idprop
 import bmesh
+import os
+import unicodedata
+from collections import defaultdict
 
 # Internal state for restoring
 _previous_selection = []
 _previous_active = None
 _previous_mode = None
 _dummy_name = "TemporaryContextObject"
+
+
+def normalize(path):
+    """Normalize path for cross-platform and Unicode safety."""
+    return unicodedata.normalize('NFC', os.path.abspath(os.path.normpath(path)))
+
+def dataKrash(root, extensions):
+    """Recursively find files by extension, matching longest ones first, returning keys with leading dots."""
+    root = normalize(root)
+    # Normalize and sort extensions by length (descending)
+    norm_exts = sorted({ext.lower() for ext in extensions}, key=len, reverse=True)
+    ext_map = defaultdict(list)
+
+    def recurse(folder):
+        try:
+            for entry in os.scandir(folder):
+                if entry.is_file():
+                    name_lower = entry.name.lower()
+                    for ext in norm_exts:
+                        if name_lower.endswith(ext):
+                            ext_map[ext].append(normalize(entry.path))
+                            break
+                elif entry.is_dir():
+                    recurse(entry.path)
+        except (PermissionError, FileNotFoundError):
+            pass #todo: some useful output here in cases of errors
+
+    recurse(root)
+    return dict(ext_map)
 
 mode_map = {
     'OBJECT': 'OBJECT',
