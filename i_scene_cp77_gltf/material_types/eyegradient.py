@@ -1,41 +1,39 @@
 import bpy
 import os
 from ..main.common import *
-
-import json
+from ..jsontool import JSONTool
 
 class EyeGradient:
-    def __init__(self, BasePath,image_format):
+    def __init__(self, BasePath,image_format, ProjPath):
         self.BasePath = BasePath
+        self.ProjPath = ProjPath
         self.image_format = image_format
 
     def create(self,Data,Mat):
 
+
         # load the gradient profile from the depot
-        file = open(self.BasePath + Data["IrisColorGradient"] + ".json",mode='r')
-        profile = json.loads(file.read())
-        file.close()
-        valid_json=json_ver_validate(profile)
-        if not valid_json:
-            self.report({'ERROR'}, "Incompatible eye gradient json file detected. This add-on version requires materials generated WolvenKit 8.9.1 or higher.")
-            return
+        profile = JSONTool.openJSON(Data["IrisColorGradient"] + ".json",mode='r', DepotPath=self.BasePath, ProjPath=self.ProjPath)
         profile= profile["Data"]["RootChunk"]
         CurMat = Mat.node_tree
+        pBSDF = CurMat.nodes[loc('Principled BSDF')]
+        sockets=bsdf_socket_names()
 
         if "RefractionIndex" in Data:
-            CurMat.nodes['Principled BSDF'].inputs['IOR'].default_value = Data["RefractionIndex"]
+            pBSDF.inputs['IOR'].default_value = Data["RefractionIndex"]
 
         if "Specularity" in Data:
-            CurMat.nodes['Principled BSDF'].inputs["Specular"].default_value = Data["Specularity"]
+            pBSDF.inputs[sockets["Specular"]].default_value = Data["Specularity"]
 
 #NORMAL/n
         if "Normal" in Data:
             nMap = CreateShaderNodeNormalMap(CurMat,self.BasePath + Data["Normal"],-150,-250,'Normal',self.image_format)
-            CurMat.links.new(nMap.outputs[0],CurMat.nodes['Principled BSDF'].inputs['Normal'])
+            CurMat.links.new(nMap.outputs[0],pBSDF.inputs['Normal'])
 
 #ROUGHNESS+SCALE/rs
         if "Roughness" in Data:
-            rImgNode = CreateShaderNodeTexImage(CurMat,self.BasePath + Data["Roughness"],-450,0,'Roughness',self.image_format,True)
+            rImg=imageFromRelPath(Data["Roughness"],self.image_format,DepotPath=self.BasePath, ProjPath=self.ProjPath, isNormal=True)
+            rImgNode = create_node(CurMat.nodes,"ShaderNodeTexImage",  (-450,0), label="Roughness", image=rImg)
 
         if "RoughnessScale" in Data:
             rsNode = CreateShaderNodeValue(CurMat, Data["RoughnessScale"],-350,-50,"RoughnessScale")
@@ -47,10 +45,10 @@ class EyeGradient:
             rsVecNode.location = (-150, 0)
             rsVecNode.operation = "SCALE"
             rsVecNode.hide = True
-            
+
             CurMat.links.new(rImgNode.outputs[0],rsVecNode.inputs[0])
             CurMat.links.new(rsNode.outputs[0],rsVecNode.inputs[3])
-            CurMat.links.new(rsVecNode.outputs[0],CurMat.nodes['Principled BSDF'].inputs['Roughness'])
+            CurMat.links.new(rsVecNode.outputs[0],pBSDF.inputs['Roughness'])
 
 #ALBEDO/a
         if "Albedo" in Data:
@@ -93,8 +91,8 @@ class EyeGradient:
             CurMat.links.new(igradNode.outputs[0], mixNode.inputs[2])
             CurMat.links.new(aImgNode.outputs[0], mixNode.inputs[1])
 
-            CurMat.links.new(mixNode.outputs[0],CurMat.nodes['Principled BSDF'].inputs['Base Color'])
+            CurMat.links.new(mixNode.outputs[0],pBSDF.inputs['Base Color'])
 
         # fallback to image only if the gradients couldn't be generated
         else:
-            CurMat.links.new(aImgNode.outputs[0],CurMat.nodes['Principled BSDF'].inputs['Base Color'])
+            CurMat.links.new(aImgNode.outputs[0],pBSDF.inputs['Base Color'])

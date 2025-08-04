@@ -10,8 +10,9 @@ class SpeedTree:
         self.image_format = image_format
     def create(self,Data,Mat):
         CurMat = Mat.node_tree
-        pBSDF=CurMat.nodes['Principled BSDF']
-        pBSDF.inputs['Specular'].default_value = 0
+        pBSDF=CurMat.nodes[loc('Principled BSDF')]
+        sockets=bsdf_socket_names()
+        pBSDF.inputs[sockets['Specular']].default_value = 0
         
         #Diffuse       
         dTexMapping = CurMat.nodes.new("ShaderNodeMapping")
@@ -48,7 +49,7 @@ class SpeedTree:
             nMap.inputs[1].links[0].from_node.inputs[0].links[0].from_node.location = (-800,-200)
 
         if "TransGlossMap" in Data:
-            rImg = imageFromRelPath(Data["TransGlossMap"],self.image_format, DepotPath=self.BasePath, ProjPath=self.ProjPath)
+            rImg = imageFromRelPath(Data["TransGlossMap"],self.image_format, DepotPath=self.BasePath, ProjPath=self.ProjPath, isNormal=True)
             rImgNode = create_node(CurMat.nodes,"ShaderNodeTexImage",  (-800,100), label="TransGlossMap", image=rImg, hide = False)
             
             mathNode = create_node(CurMat.nodes,"ShaderNodeMath",(-400,100), operation='SUBTRACT', label="Math")

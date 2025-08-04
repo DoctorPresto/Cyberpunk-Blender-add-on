@@ -33,9 +33,9 @@ class VehicleLights:
 
     def create(self,Data,Mat):
         CurMat = Mat.node_tree
-        pBSDF = CurMat.nodes['Principled BSDF']
-
-        CurMat.nodes['Principled BSDF'].inputs['Specular'].default_value = 0
+        pBSDF = CurMat.nodes[loc('Principled BSDF')]
+        sockets=bsdf_socket_names()
+        pBSDF.inputs[sockets['Specular']].default_value = 0
 
         mixRGB = CurMat.nodes.new("ShaderNodeMixRGB")
         mixRGB.location = (-200,200)
@@ -75,7 +75,7 @@ class VehicleLights:
             CurMat.links.new(emTexNode.outputs[0],mulNode.inputs[2])
             pBSDF.inputs['Emission Strength'].default_value =  10
 
-        CurMat.links.new(mulNode.outputs[0],pBSDF.inputs['Emission'])
+        CurMat.links.new(mulNode.outputs[0],pBSDF.inputs[sockets['Emission']])
         
 
 
