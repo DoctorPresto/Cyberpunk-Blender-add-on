@@ -45,7 +45,7 @@ def importEnt(with_materials, filepath='', appearances=[], exclude_meshes=[], in
 
     error_messages = []
     JSONTool.start_caching()
-    entPaths = dataKrash('.glb', 'mesh.json', '.app.json', 'anims.glb', '.rig.json', '.phys.json')
+    entPaths = dataKrash('.glb', '.mesh.json', '.app.json', 'anims.glb', '.rig.json', '.phys.json')
     ent_name=os.path.basename(filepath)[:-9]
     if not cp77_addon_prefs.non_verbose:
         if isinstance(appearances, list):
