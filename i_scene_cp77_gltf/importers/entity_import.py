@@ -19,7 +19,7 @@ def create_axes(ent_coll,name):
     if name not in ent_coll.objects.keys():
         o = bpy.data.objects.new( name , None )
         ent_coll.objects.link( o )
-        o.empty_display_size = 
+        o.empty_display_size = .5
         o.empty_display_type = 'PLAIN_AXES'
         orig_rot= o.rotation_quaternion
         o.rotation_mode='XYZ'
