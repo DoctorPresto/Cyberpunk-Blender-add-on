@@ -10,8 +10,9 @@ class Glass:
 
     def create(self,Data,Mat):
         CurMat = Mat.node_tree
-        pBDSF=CurMat.nodes['Principled BSDF']
-        pBDSF.inputs['Transmission'].default_value = 1
+        pBDSF=CurMat.nodes[loc('Principled BSDF')]
+        sockets=bsdf_socket_names()
+        pBDSF.inputs[sockets['Transmission']].default_value = 1
 
         if "TintColor" in Data:
             Color = CreateShaderNodeRGB(CurMat, Data["TintColor"],-400,200,'TintColor')
@@ -19,7 +20,7 @@ class Glass:
 
         if "IOR" in Data:
             safeIOR = (Data['IOR'])
-            if safeIOR == 0:
+            if safeIOR < 1:
                 safeIOR = 1
             else:
                 safeIOR = (Data['IOR'])
@@ -27,7 +28,7 @@ class Glass:
             CurMat.links.new(IOR.outputs[0],pBDSF.inputs['IOR'])
 
         if "Roughness" in Data:
-            rImg = imageFromRelPath(Data["Roughness"],self.image_format,DepotPath=self.BasePath, ProjPath=self.ProjPath)
+            rImg = imageFromRelPath(Data["Roughness"],self.image_format,DepotPath=self.BasePath, ProjPath=self.ProjPath, isNormal=True)
             rImgNode = create_node(CurMat.nodes,"ShaderNodeTexImage",  (-800,50), label="Roughness", image=rImg)
             CurMat.links.new(rImgNode.outputs[0],pBDSF.inputs['Roughness'])
 
@@ -36,8 +37,8 @@ class Glass:
             CurMat.links.new(nMap.outputs[0],pBDSF.inputs['Normal'])
         
         if "MaskTexture" in Data:
-            mImg = imageFromRelPath(Data["MaskTexture"],self.image_format,DepotPath=self.BasePath, ProjPath=self.ProjPath)
-            mImgNode = create_node(CurMat.nodes,"ShaderNodeTexImage",  (-1200,350), label="MaskTexture", image=rImg)
+            mImg = imageFromRelPath(Data["MaskTexture"],self.image_format,DepotPath=self.BasePath, ProjPath=self.ProjPath, isNormal=True)
+            mImgNode = create_node(CurMat.nodes,"ShaderNodeTexImage",  (-1200,350), label="MaskTexture", image=mImg)
             facNode = create_node(CurMat.nodes,"ShaderNodeMath", (-450,-100) ,operation = 'MULTIPLY')
             facNode.inputs[0].default_value = 1
             CurMat.links.new(facNode.outputs[0],pBDSF.inputs['Alpha'])

@@ -51,8 +51,9 @@ class Decal:
                 
 
         CurMat = Mat.node_tree
-        Prin_BSDF=CurMat.nodes['Principled BSDF']
-        Prin_BSDF.inputs['Specular'].default_value = 0.5
+        Prin_BSDF=CurMat.nodes[loc('Principled BSDF')]
+        sockets=bsdf_socket_names()
+        Prin_BSDF.inputs[sockets['Specular']].default_value = 0.5
         TexCoordinate = CurMat.nodes.new("ShaderNodeTexCoord")
         TexCoordinate.location = (-1000,300)
         if difftex and os.path.exists(os.path.join(self.BasePath ,difftex)):
@@ -98,7 +99,7 @@ class Decal:
                 CurMat.links.new(dImgNode.outputs[1],mulNode1.inputs[1])
             CurMat.links.new(mulNode1.outputs[0],Prin_BSDF.inputs['Alpha'])
         else:
-            CurMat.nodes['Principled BSDF'].inputs['Alpha'].default_value = 0
+            CurMat.nodes[loc('Principled BSDF')].inputs['Alpha'].default_value = 0
             print(f"Texture is not found: {difftex}")
         if RoughnessTexture and os.path.exists(os.path.join(self.BasePath ,RoughnessTexture)):
             rImgNode = CreateShaderNodeTexImage(CurMat,os.path.join(self.BasePath ,RoughnessTexture),-800,0,'RoughnessTexture',self.image_format)
@@ -125,7 +126,7 @@ class Decal:
             reroute2.location = (-275, 115)
             CurMat.links.new(mImgNode.outputs[0],reroute2.inputs[0])
             CurMat.links.new(reroute2.outputs[0],Prin_BSDF.inputs['Metallic'])
-            CurMat.links.new(TexCoordinate.outputs[0],rImgNode.inputs[0])         
+            CurMat.links.new(TexCoordinate.outputs[0],mImgNode.inputs[0])         
 
 
 # The above is  the code thats for the import plugin below is to allow testing/dev, you can run this file to import something

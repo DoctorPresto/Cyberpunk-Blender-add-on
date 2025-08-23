@@ -9,8 +9,9 @@ class MeshDecalParallax:
         self.image_format = image_format
     def create(self,Data,Mat):
         CurMat = Mat.node_tree
-        pBSDF=CurMat.nodes['Principled BSDF']
-        pBSDF.inputs['Specular'].default_value = 0
+        pBSDF=CurMat.nodes[loc('Principled BSDF')]
+        sockets=bsdf_socket_names()
+        pBSDF.inputs[sockets['Specular']].default_value = 0
         #Diffuse
         mixRGB = create_node(CurMat.nodes,"ShaderNodeMixRGB", (-500,500),blend_type = 'MULTIPLY')
         mixRGB.inputs[0].default_value = 1
@@ -78,7 +79,7 @@ class MeshDecalParallax:
         mulNode1.location = (-500,-100)
         CurMat.links.new(mulNode1.outputs[0],pBSDF.inputs['Roughness'])
         if "RoughnessTexture" in Data:
-            rImg = imageFromRelPath(Data["RoughnessTexture"],self.image_format, DepotPath=self.BasePath, ProjPath=self.ProjPath)
+            rImg = imageFromRelPath(Data["RoughnessTexture"],self.image_format, DepotPath=self.BasePath, ProjPath=self.ProjPath, isNormal=True)
             rImgNode = create_node(CurMat.nodes,"ShaderNodeTexImage",  (-800,100), label="RoughnessTexture", image=rImg, hide = False)
             CurMat.links.new(rImgNode.outputs[0],mulNode1.inputs[1])
 
@@ -90,9 +91,9 @@ class MeshDecalParallax:
             mulNode2.inputs[0].default_value = 1
         mulNode2.operation = 'MULTIPLY'
         mulNode2.location = (-500,200)
-        CurMat.links.new(mulNode2.outputs[0],CurMat.nodes['Principled BSDF'].inputs['Metallic'])
+        CurMat.links.new(mulNode2.outputs[0],pBSDF.inputs['Metallic'])
         if "MetalnessTexture" in Data:
-            mImg=imageFromRelPath(Data["MetalnessTexture"],self.image_format,DepotPath=self.BasePath, ProjPath=self.ProjPath)
+            mImg=imageFromRelPath(Data["MetalnessTexture"],self.image_format,DepotPath=self.BasePath, ProjPath=self.ProjPath, isNormal=True)
             mImgNode = create_node(CurMat.nodes,"ShaderNodeTexImage",  (-800,200), label="MetalnessTexture", image=mImg)
             CurMat.links.new(mImgNode.outputs[0],mulNode2.inputs[1])
 '''     
