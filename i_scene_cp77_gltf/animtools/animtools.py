@@ -74,7 +74,6 @@ def reset_armature(self, context):
 
     return {'FINISHED'}
 
-
 ## insert a keyframe at either the corrunt frame or for the entire specified frame length
 def cp77_keyframe(self, context, frameall=False):
 
