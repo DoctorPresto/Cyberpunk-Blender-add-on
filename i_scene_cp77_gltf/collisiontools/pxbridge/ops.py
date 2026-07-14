@@ -1,6 +1,8 @@
 import bpy
+import os
 import time
-from bpy.props import StringProperty, IntProperty
+import importlib
+from bpy.props import StringProperty, IntProperty, EnumProperty
 from bpy_extras.io_utils import ExportHelper, ImportHelper
 from .sim import core, solvers
 from . import draw, io
@@ -10,6 +12,24 @@ from .ui import get_active_rig, get_active_dangle_node, get_active_chain
 SUPPORTED_PREVIEW_SOLVERS = {'DYNG', 'PBD', 'SPRING', 'PENDULUM'}
 _ACTIVE_PREVIEW_SESSIONS = {}
 
+
+
+def _load_write_rig_module():
+    package_root = __package__.split('.')[0]
+    return importlib.import_module(f"{package_root}.exporters.write_rig")
+
+
+def _active_exportable_rig(context):
+    obj = context.active_object
+    if obj is None or obj.type != 'ARMATURE':
+        return None
+    data = obj.data
+    return obj if data.get('source_rig_file') or data.get('cp77_rig_space_contract') else None
+
+
+def _draw_rig_export_menu(self, context):
+    if _active_exportable_rig(context) is not None:
+        self.layout.operator("dangle.export_rig_json", text="Cyberpunk Rig JSON (.rig.json)")
 
 def _preview_session_key(rig):
     try:
@@ -332,6 +352,70 @@ class DANGLE_OT_export_json(bpy.types.Operator, ExportHelper):
         except Exception as e:
             self.report({'ERROR'}, f"Failed to export: {str(e)}")
             return {'CANCELLED'}
+        return {'FINISHED'}
+
+
+class DANGLE_OT_export_rig_json(bpy.types.Operator, ExportHelper):
+    bl_idname = "dangle.export_rig_json"
+    bl_label = "Export Rig JSON"
+    bl_description = "Export the active read_rig armature back to WolvenKit .rig.json"
+    filename_ext = ".rig.json"
+    filter_glob: StringProperty(default="*.rig.json", options={'HIDDEN'})
+
+    pose_target: EnumProperty(
+        name="Rest Pose Target",
+        items=(
+            ('IMPORTED', "Imported Rest Pose", "Update the pose array used to create this armature"),
+            ('T_POSE', "Reference / T-Pose", "Update boneTransforms and referencePoseMS"),
+            ('A_POSE', "A-Pose", "Update aPoseLS and aPoseMS"),
+            ('ALL', "All Pose Arrays", "Write the current rest pose to every pose array"),
+        ),
+        default='IMPORTED',
+    )
+
+    @classmethod
+    def poll(cls, context):
+        return _active_exportable_rig(context) is not None
+
+    def invoke(self, context, event):
+        rig = _active_exportable_rig(context)
+        if rig is not None and not self.filepath:
+            source = str(rig.data.get('source_rig_file', ''))
+            if source and ';' not in source:
+                filename = os.path.basename(source)
+            else:
+                filename = f"{rig.name}.rig.json"
+            if not filename.lower().endswith('.rig.json'):
+                filename = os.path.splitext(filename)[0] + '.rig.json'
+            base_directory = os.path.dirname(bpy.data.filepath) if bpy.data.filepath else ''
+            self.filepath = os.path.join(base_directory, filename)
+        return ExportHelper.invoke(self, context, event)
+
+    def execute(self, context):
+        rig = _active_exportable_rig(context)
+        if rig is None:
+            self.report({'ERROR'}, "Select an armature imported by read_rig.py.")
+            return {'CANCELLED'}
+        if getattr(rig, 'dangle_state', None) and rig.dangle_state.is_playing:
+            self.report({'ERROR'}, "Stop Dangle preview before exporting the rig.")
+            return {'CANCELLED'}
+        try:
+            rig_io = _load_write_rig_module()
+            summary = rig_io.export_armature_to_rig_json(
+                rig,
+                self.filepath,
+                self.pose_target,
+            )
+        except Exception as error:
+            self.report({'ERROR'}, f"Rig export failed: {error}")
+            return {'CANCELLED'}
+
+        message = f"Exported {summary['bone_count']} bones to {os.path.basename(summary['filepath'])}."
+        if summary.get('topology_changed'):
+            message += " Topology changed; retained non-pose metadata may require review."
+        if summary.get('nonuniform_scaled_edit_count'):
+            message += " Edited bones under nonuniform source scale were reconstructed approximately."
+        self.report({'INFO'}, message)
         return {'FINISHED'}
 
 class DANGLE_OT_add_dangle_node(bpy.types.Operator):
@@ -673,6 +757,7 @@ classes = (
     DANGLE_OT_bake_to_keyframes,
     DANGLE_OT_import_json,
     DANGLE_OT_export_json,
+    DANGLE_OT_export_rig_json,
     DANGLE_OT_add_dangle_node,
     DANGLE_OT_remove_dangle_node,
     DANGLE_OT_add_chain,
@@ -692,10 +777,16 @@ classes = (
 def register():
     for cls in classes:
         bpy.utils.register_class(cls)
+    bpy.types.TOPBAR_MT_file_export.append(_draw_rig_export_menu)
+
 
 def unregister():
     for session in list(_ACTIVE_PREVIEW_SESSIONS.values()):
         session._finish(bpy.context, restore_pose=True)
     _ACTIVE_PREVIEW_SESSIONS.clear()
+    try:
+        bpy.types.TOPBAR_MT_file_export.remove(_draw_rig_export_menu)
+    except (ValueError, RuntimeError):
+        pass
     for cls in reversed(classes):
         bpy.utils.unregister_class(cls)
