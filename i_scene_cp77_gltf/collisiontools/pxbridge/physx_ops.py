@@ -6,20 +6,7 @@ import bpy
 from bpy_extras.view3d_utils import region_2d_to_origin_3d, region_2d_to_vector_3d
 from mathutils import Euler, Matrix, Quaternion, Vector
 
-from .physx_utils import (
-    add_ground_plane,
-    bits_to_int,
-    get_actor_world_transform,
-    get_bone_world_matrix,
-    get_clean_mesh_data,
-    get_mat_data,
-    get_mat_density,
-    get_raw_mesh_data,
-    set_bone_world_matrix,
-)
-from .viz import invalidate_visualization_cache
-from .presets_lib import _OVERRIDES, _RAW_PRESETS, get_layer_bit
-from .capability import require_bridge
+from . import physx_utils, viz
 
 FABRIC_PRESETS = {
     'COTTON': {
@@ -553,7 +540,7 @@ def update_cloth_colliders(cloth_obj, cloth_handle_int, context, _bridge, init_c
     def add_bone_sphere(arm_obj, bone_name, radius):
         if not bone_name or bone_name not in arm_obj.pose.bones:
             return None
-        pos_world = get_bone_world_matrix(arm_obj, bone_name).to_translation()
+        pos_world = physx_utils.get_bone_world_matrix(arm_obj, bone_name).to_translation()
         pos_local = cloth_inv @ pos_world
         return add_sphere_at(f"bone:{arm_obj.name}:{bone_name}", pos_local, radius)
 
@@ -647,14 +634,14 @@ class PHYSX_OT_init_scene(bpy.types.Operator):
 
     def execute(self, context):
         try:
-            _bridge = require_bridge()
+            from . import pxbridge as _bridge
             if _bridge.init():
                 context.scene.physx.is_initialized = True
                 g = context.scene.physx.gravity
                 _bridge.set_gravity(g[0], g[1], g[2])
                 self.report({'INFO'}, "PhysX Initialized")
                 if self.add_ground:
-                    ground_obj = add_ground_plane()
+                    ground_obj = physx_utils.add_ground_plane()
                     already_added = False
                     for item in context.scene.physx.actors:
                         if item.obj_ref == ground_obj:
@@ -709,7 +696,7 @@ class PHYSX_OT_build_scene(bpy.types.Operator):
     def execute(self, context):
         bpy.ops.physx.validate_scene()
         try:
-            _bridge = require_bridge()
+            from . import pxbridge as _bridge
             _bridge.reset()
             g = context.scene.physx.gravity
             _bridge.set_gravity(g[0], g[1], g[2])
@@ -727,14 +714,14 @@ class PHYSX_OT_build_scene(bpy.types.Operator):
                         if not shape.cooked_data: continue
                         raw = base64.b64decode(shape.cooked_data.encode('ascii'))
 
-                    mat_data = get_mat_data(shape.physics_material)
+                    mat_data = physx_utils.get_mat_data(shape.physics_material)
                     q = shape.local_rot
                     l = shape.local_pos
                     px_quat = [q[1], q[2], q[3], q[0]]
 
-                    w0 = bits_to_int(shape.filter_group)
-                    w1 = bits_to_int(shape.filter_mask)
-                    w2 = bits_to_int(shape.filter_query)
+                    w0 = physx_utils.bits_to_int(shape.filter_group)
+                    w1 = physx_utils.bits_to_int(shape.filter_mask)
+                    w2 = physx_utils.bits_to_int(shape.filter_query)
                     w3 = 0
 
                     shapes_list.append(
@@ -750,7 +737,7 @@ class PHYSX_OT_build_scene(bpy.types.Operator):
                             )
 
                 if not shapes_list: continue
-                loc, quat = get_actor_world_transform(item)
+                loc, quat = physx_utils.get_actor_world_transform(item)
                 actor_pose = [loc.x, loc.y, loc.z, quat.x, quat.y, quat.z, quat.w]
                 com = [px.com_offset[0], px.com_offset[1], px.com_offset[2]]
                 inert = [px.inertia[0], px.inertia[1], px.inertia[2]]
@@ -876,7 +863,7 @@ class PHYSX_OT_run_steps(bpy.types.Operator):
         px_s = context.scene.physx
         if not px_s.is_initialized: return {'CANCELLED'}
         try:
-            _bridge = require_bridge()
+            from . import pxbridge as _bridge
             dt = 1.0 / 60.0
             for _ in range(px_s.sim_steps):
                 _step_bridge(context, _bridge, dt)
@@ -892,10 +879,10 @@ class PHYSX_OT_run_steps(bpy.types.Operator):
                         if item.use_bone_parent and item.parent_armature != "NONE" and item.target_bone != "NONE":
                             armature_obj = context.scene.objects.get(item.parent_armature)
                             if armature_obj:
-                                set_bone_world_matrix(armature_obj, item.target_bone, world_matrix)
+                                physx_utils.set_bone_world_matrix(armature_obj, item.target_bone, world_matrix)
                         else:
                             item.obj_ref.matrix_world = world_matrix
-            invalidate_visualization_cache()
+            viz.invalidate_visualization_cache()
             for window in context.window_manager.windows:
                 for area in window.screen.areas: area.tag_redraw()
             self.report({'INFO'}, f"Stepped {px_s.sim_steps}")
@@ -932,7 +919,7 @@ class PHYSX_OT_sim_step(bpy.types.Operator):
             return self.cancel(context)
         if event.type in {'ESC', 'RIGHTMOUSE'}:
             return self.cancel(context)
-        _bridge = require_bridge()
+        from . import pxbridge as _bridge
 
         # Manipulator
         if event.type == 'MOUSEMOVE':
@@ -950,20 +937,20 @@ class PHYSX_OT_sim_step(bpy.types.Operator):
                         px_s.manipulator_pos = pos
                         if px_s.use_grab_mode:
                             if self._cursor_handle == "0":
-                                target_preset_name = _OVERRIDES.get(
+                                target_preset_name = physx_utils.presets_lib._OVERRIDES.get(
                                         "All Collision Touch All", "World Dynamic"
                                         )
                                 w0, w1, w2, w3 = 0, 0, 0, 0
-                                if target_preset_name in _RAW_PRESETS:
-                                    data = _RAW_PRESETS[target_preset_name]
+                                if target_preset_name in physx_utils.presets_lib._RAW_PRESETS:
+                                    data = physx_utils.presets_lib._RAW_PRESETS[target_preset_name]
                                     for name in data[0]:
-                                        idx = get_layer_bit(name, is_query=False)
+                                        idx = physx_utils.presets_lib.get_layer_bit(name, is_query=False)
                                         if idx >= 0: w0 |= (1 << idx)
                                     for name in data[1]:
-                                        idx = get_layer_bit(name, is_query=False)
+                                        idx = physx_utils.presets_lib.get_layer_bit(name, is_query=False)
                                         if idx >= 0: w1 |= (1 << idx)
                                     for name in data[2]:
-                                        idx = get_layer_bit(name, is_query=True)
+                                        idx = physx_utils.presets_lib.get_layer_bit(name, is_query=True)
                                         if idx >= 0: w2 |= (1 << idx)
 
                                 start_pose = [pos.x, pos.y, pos.z, 0, 0, 0, 1]
@@ -1000,12 +987,12 @@ class PHYSX_OT_sim_step(bpy.types.Operator):
                     if item.use_bone_parent and item.parent_armature != "NONE" and item.target_bone != "NONE":
                         armature_obj = context.scene.objects.get(item.parent_armature)
                         if armature_obj:
-                            set_bone_world_matrix(armature_obj, item.target_bone, world_matrix)
+                            physx_utils.set_bone_world_matrix(armature_obj, item.target_bone, world_matrix)
                     else:
                         item.obj_ref.matrix_world = world_matrix
 
             # Force update
-            invalidate_visualization_cache()
+            viz.invalidate_visualization_cache()
             context.view_layer.update()
         return {'PASS_THROUGH'}
 
@@ -1020,10 +1007,10 @@ class PHYSX_OT_sim_step(bpy.types.Operator):
             context.window_manager.event_timer_remove(self._timer)
             self._timer = None
         if self._cursor_handle != "0":
-            _bridge = require_bridge()
+            from . import pxbridge as _bridge
             try:
                 _bridge.remove_actor(int(self._cursor_handle))
-            except Exception:
+            except:
                 pass
             self._cursor_handle = "0"
             context.scene.physx.manipulator_handle = "0"
@@ -1054,7 +1041,7 @@ class PHYSX_OT_apply_force(bpy.types.Operator):
                 h = item.actor_handle
                 break
         if h == "0": return {'CANCELLED'}
-        _bridge = require_bridge()
+        from . import pxbridge as _bridge
         f = px_s.force_value
         p = context.scene.cursor.location if px_s.use_force_pos else Vector((0, 0, 0))
         _bridge.apply_force(int(h), [f[0], f[1], f[2]], int(px_s.force_mode), px_s.use_force_pos, [p.x, p.y, p.z])
@@ -1067,10 +1054,10 @@ class PHYSX_OT_update_gravity(bpy.types.Operator):
 
     def execute(self, context):
         try:
-            _bridge = require_bridge()
+            from . import pxbridge as _bridge
             g = context.scene.physx.gravity
             _bridge.set_gravity(g[0], g[1], g[2])
-        except Exception:
+        except:
             pass
         return {'FINISHED'}
 
@@ -1081,7 +1068,7 @@ class PHYSX_OT_cook_mesh(bpy.types.Operator):
 
     def execute(self, context):
         try:
-            _bridge = require_bridge()
+            from . import pxbridge as _bridge
             if not _bridge.init(): return {'CANCELLED'}
             obj = context.object
             shape = obj.physx.shapes[obj.physx.shape_index]
@@ -1102,7 +1089,7 @@ class PHYSX_OT_cook_mesh(bpy.types.Operator):
                 if rows < 2 or cols < 2: raise ValueError("Resolution must be >= 2")
                 step_x = (max_x - min_x) / (cols - 1)
                 step_y = (max_y - min_y) / (rows - 1)
-                verts, indices = get_raw_mesh_data(obj)
+                verts, indices = physx_utils.get_raw_mesh_data(obj)
                 loc = obj.matrix_world.to_translation()
                 rot = obj.matrix_world.to_quaternion()
                 transform = [loc.x, loc.y, loc.z, rot.x, rot.y, rot.z, rot.w]
@@ -1110,14 +1097,14 @@ class PHYSX_OT_cook_mesh(bpy.types.Operator):
                         rows, cols, [min_x, min_y, min_z], [step_x, step_y], verts, indices, transform
                         )
             else:
-                verts, indices = get_clean_mesh_data(obj, shape.shape_type, shape.vertex_limit)
+                verts, indices = physx_utils.get_clean_mesh_data(obj, shape.shape_type, shape.vertex_limit)
                 cooked = _bridge.cook_mesh(shape.shape_type, verts, indices, shape.vertex_limit)
             if cooked:
                 shape.cooked_data = base64.b64encode(cooked).decode('ascii')
                 shape.is_cooked = True
                 shape.local_pos = (0, 0, 0)
                 shape.local_rot = (1.0, 0.0, 0.0, 0.0)
-                invalidate_visualization_cache()
+                viz.invalidate_visualization_cache()
                 self.report({'INFO'}, "Cooking Complete")
         except Exception as e:
             self.report({'ERROR'}, str(e))
@@ -1164,7 +1151,7 @@ class PHYSX_OT_fit_bounds_shape(bpy.types.Operator):
             shape.dim_x = size.x / 2.0;
             shape.dim_y = size.y / 2.0;
             shape.dim_z = size.z / 2.0
-        invalidate_visualization_cache()
+        viz.invalidate_visualization_cache()
         context.area.tag_redraw()
         return {'FINISHED'}
 
@@ -1177,14 +1164,14 @@ class PHYSX_OT_calc_dynamics(bpy.types.Operator):
         obj = context.object
         px = obj.physx
         try:
-            _bridge = require_bridge()
+            from . import pxbridge as _bridge
             shapes_data = []
             densities = []
             for shape in px.shapes:
                 raw = ""
                 if shape.cooked_data:
                     raw = base64.b64decode(shape.cooked_data.encode('ascii'))
-                dens = get_mat_density(shape.physics_material)
+                dens = physx_utils.get_mat_density(shape.physics_material)
                 densities.append(dens)
                 l = shape.local_pos
                 q = shape.local_rot
@@ -1217,7 +1204,7 @@ class PHYSX_OT_shape_action(bpy.types.Operator):
         elif self.action == 'REMOVE' and len(px.shapes) > 0:
             px.shapes.remove(px.shape_index)
             px.shape_index = max(0, px.shape_index - 1)
-        invalidate_visualization_cache()
+        viz.invalidate_visualization_cache()
         return {'FINISHED'}
 
 
@@ -1242,7 +1229,7 @@ class PHYSX_OT_list_action(bpy.types.Operator):
             px_s.actor_list_index = len(px_s.actors) - 1
         elif self.action == 'REMOVE':
             if len(px_s.actors) > 0: px_s.actors.remove(px_s.actor_list_index)
-        invalidate_visualization_cache()
+        viz.invalidate_visualization_cache()
         return {'FINISHED'}
 
 
@@ -1252,7 +1239,7 @@ class PHYSX_OT_reset_session(bpy.types.Operator):
 
     def execute(self, context):
         try:
-            _bridge = require_bridge()
+            from . import pxbridge as _bridge
             _bridge.reset()
             context.scene.physx.active_actor_count = 0
             context.scene.physx.scene_built = False

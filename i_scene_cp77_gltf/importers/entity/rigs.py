@@ -1,5 +1,4 @@
 from __future__ import annotations
-from ...blender.transactions import track_created_datablock
 
 import os
 import traceback
@@ -7,16 +6,14 @@ from dataclasses import dataclass, field
 from typing import Any
 
 import bpy
-from bpy.app.handlers import persistent
 
-from ...addon_identity import get_addon_preferences
-from ..animation import import_anims_glb_to_armature
-from ..rig import (
+from .. import read_rig as _read_rig_module
+from ..direct_anim_import import import_anims_glb_to_armature
+from ..read_rig import (
     create_armature_from_data,
-    create_armature_from_rig_data,
     create_armature_from_rig_files,
     merge_rig_datas,
-    merged_rig_document,
+    read_rig,
     rig_data_to_root_chunk,
 )
 from ..common.entity_data import component_name
@@ -32,29 +29,21 @@ _RIG_ARMATURE_OBJECT_CACHE: dict[str, Any] = {}
 _RIG_ARMATURE_PROTOTYPE_CACHE: dict[str, Any] = {}
 _RIG_ARMATURE_PROTOTYPE_LIMIT = 32
 _RIG_PROTOTYPE_MARKER = 'cp77_entity_rig_prototype'
+_RIG_PROTOTYPE_ORPHAN_PURGE_DONE = False
 
 
 def _remove_armature_prototype(prototype) -> None:
     if prototype is None:
         return
-    try:
-        data = prototype.data
-    except (AttributeError, ReferenceError, RuntimeError):
-        return
+    data = getattr(prototype, 'data', None)
     try:
         bpy.data.objects.remove(prototype, do_unlink=True)
-    except (AttributeError, ReferenceError, RuntimeError):
+    except (ReferenceError, RuntimeError):
         pass
-    if data is None:
-        return
-    try:
-        unused = data.users == 0
-    except (AttributeError, ReferenceError, RuntimeError):
-        return
-    if unused:
+    if data is not None and getattr(data, 'users', 1) == 0:
         try:
             bpy.data.armatures.remove(data)
-        except (AttributeError, ReferenceError, RuntimeError):
+        except (ReferenceError, RuntimeError):
             pass
 
 
@@ -71,22 +60,26 @@ def clear_rig_caches(*, clear_prototypes: bool = False) -> None:
         clear_rig_prototype_cache()
 
 
-@persistent
-def invalidate_rig_caches_on_file_load(_unused=None) -> None:
-    clear_rig_caches(clear_prototypes=True)
+def _purge_orphaned_rig_prototypes() -> bool:
+    """Remove stale prototypes once Blender's unrestricted data API is available."""
+    global _RIG_PROTOTYPE_ORPHAN_PURGE_DONE
+
+    objects = getattr(getattr(bpy, 'data', None), 'objects', None)
+    if objects is None:
+        return False
+
+    for prototype in tuple(objects):
+        getter = getattr(prototype, 'get', None)
+        if callable(getter) and getter(_RIG_PROTOTYPE_MARKER, False):
+            _remove_armature_prototype(prototype)
+
+    _RIG_PROTOTYPE_ORPHAN_PURGE_DONE = True
+    return True
 
 
-def register_rig_cache_handlers() -> None:
-    handlers = bpy.app.handlers.load_pre
-    if invalidate_rig_caches_on_file_load not in handlers:
-        handlers.append(invalidate_rig_caches_on_file_load)
-
-
-def unregister_rig_cache_handlers() -> None:
-    handlers = bpy.app.handlers.load_pre
-    if invalidate_rig_caches_on_file_load in handlers:
-        handlers.remove(invalidate_rig_caches_on_file_load)
-    clear_rig_caches(clear_prototypes=True)
+def _ensure_rig_prototype_orphans_purged() -> None:
+    if not _RIG_PROTOTYPE_ORPHAN_PURGE_DONE:
+        _purge_orphaned_rig_prototypes()
 
 
 def _clear_instance_rig_metadata(armature) -> None:
@@ -99,11 +92,12 @@ def _clear_instance_rig_metadata(armature) -> None:
 
 
 def _store_armature_prototype(cache_key: str, armature) -> None:
+    _ensure_rig_prototype_orphans_purged()
     if not is_live_armature_object(armature) or getattr(armature, 'data', None) is None:
         return
     try:
-        prototype = track_created_datablock("objects", armature.copy())
-        prototype.data = track_created_datablock("armatures", armature.data.copy())
+        prototype = armature.copy()
+        prototype.data = armature.data.copy()
         prototype.name = '__CP77_ENTITY_RIG_PROTOTYPE__'
         prototype.data.name = '__CP77_ENTITY_RIG_PROTOTYPE_DATA__'
         prototype.hide_viewport = True
@@ -125,6 +119,7 @@ def _store_armature_prototype(cache_key: str, armature) -> None:
 
 
 def _clone_armature_prototype(cache_key: str, object_name: str):
+    _ensure_rig_prototype_orphans_purged()
     prototype = _RIG_ARMATURE_PROTOTYPE_CACHE.get(cache_key)
     if not is_live_armature_object(prototype) or getattr(prototype, 'data', None) is None:
         if prototype is not None:
@@ -132,8 +127,8 @@ def _clone_armature_prototype(cache_key: str, object_name: str):
         return None
     clone = None
     try:
-        clone = track_created_datablock("objects", prototype.copy())
-        clone.data = track_created_datablock("armatures", prototype.data.copy())
+        clone = prototype.copy()
+        clone.data = prototype.data.copy()
         clone.name = object_name
         clone.data.name = f'{object_name}_Data'
         clone.hide_viewport = False
@@ -144,7 +139,7 @@ def _clone_armature_prototype(cache_key: str, object_name: str):
 
         rig_collection = bpy.data.collections.get(object_name)
         if rig_collection is None:
-            rig_collection = track_created_datablock("collections", bpy.data.collections.new(object_name))
+            rig_collection = bpy.data.collections.new(object_name)
             bpy.context.scene.collection.children.link(rig_collection)
         rig_collection.objects.link(clone)
         try:
@@ -183,7 +178,7 @@ def import_animset_to_metarig(anim_path, rig, rig_path='', ent_name='', import_t
         raise RuntimeError('A live JSON MetaRig is required before importing an animation set')
 
     bpy.context.scene.render.fps = 30
-    cp77_addon_prefs = get_addon_preferences()
+    cp77_addon_prefs = bpy.context.preferences.addons['i_scene_cp77_gltf'].preferences
     summary = import_anims_glb_to_armature(
             anim_path,
             rig,
@@ -212,7 +207,7 @@ def _armature_matches_rig_source(armature, rig_source_key):
     return bool(stored) and norm_path_key(str(stored)) == rig_source_key
 
 
-def ensure_armature_from_rig_json(rig_json_path, component_name_value='', ent_name='', rig_repository=None):
+def ensure_armature_from_rig_json(rig_json_path, component_name_value='', ent_name=''):
     if not rig_json_path:
         return None
     target = norm_path_key(rig_json_path)
@@ -241,7 +236,7 @@ def ensure_armature_from_rig_json(rig_json_path, component_name_value='', ent_na
         _RIG_ARMATURE_OBJECT_CACHE[target] = direct
         return direct
 
-    created = create_armature_from_data(rig_json_path, 'A-Pose', False, rig_repository=rig_repository)
+    created = create_armature_from_data(rig_json_path, 'A-Pose', False)
     armature = created if getattr(created, 'type', None) == ARMATURE_TYPE else None
 
     if armature is not None:
@@ -257,7 +252,7 @@ def ensure_armature_from_rig_json(rig_json_path, component_name_value='', ent_na
     return armature
 
 
-def ensure_armature_from_rig_jsons(rig_json_paths, ent_name='', merged_rig_data=None, rig_repository=None):
+def ensure_armature_from_rig_jsons(rig_json_paths, ent_name='', merged_rig_data=None):
     ordered_paths = []
     ordered_keys = []
     seen_keys = set()
@@ -297,13 +292,15 @@ def ensure_armature_from_rig_jsons(rig_json_paths, ent_name='', merged_rig_data=
         _RIG_ARMATURE_OBJECT_CACHE[merged_key] = direct
         return direct
 
-    if merged_rig_data is not None:
-        source_document = merged_rig_document(
-            ordered_paths,
-            merged_rig_data,
-            merged_key,
+    create_from_rig_data = getattr(_read_rig_module, 'create_armature_from_rig_data', None)
+    merged_document = getattr(_read_rig_module, '_merged_rig_document', None)
+    if merged_rig_data is not None and callable(create_from_rig_data):
+        source_document = (
+            merged_document(ordered_paths, merged_rig_data, merged_key)
+            if callable(merged_document)
+            else None
         )
-        created = create_armature_from_rig_data(
+        created = create_from_rig_data(
             merged_rig_data,
             'A-Pose',
             False,
@@ -315,7 +312,6 @@ def ensure_armature_from_rig_jsons(rig_json_paths, ent_name='', merged_rig_data=
             ordered_paths,
             merged_name,
             source_label=merged_key,
-            rig_repository=rig_repository,
         )
     armature = created if getattr(created, 'type', None) == ARMATURE_TYPE else None
     if armature is not None:
@@ -358,15 +354,13 @@ class EntityRigService:
         source_root: str,
         entity_name: str,
         animation_files: tuple[str, ...] | list[str],
-        import_animations: bool,
-        warnings: list[str],
+        errors: list[str],
     ) -> None:
         self.resources = resources
         self.source_root = source_root
         self.entity_name = entity_name
         self.animation_files = tuple(animation_files or ())
-        self.import_animations = bool(import_animations)
-        self.warnings = warnings
+        self.errors = errors
 
     def build(self, rig_plan: Any) -> EntityRigRuntime:
         ordered_components = tuple(rig_plan.ordered_components)
@@ -388,11 +382,11 @@ class EntityRigService:
         for component in ordered_components:
             rig_name = component_name(component)
             rig_depot = depot_path_value(component, 'rig')
-            rig_json_path = self.resources.resolve_rig(rig_depot)
-            rig_data = self.resources.load_rig(rig_json_path) if rig_json_path else None
-            rig_json = (
-                rig_data.source_document.get("Data", {}).get("RootChunk")
-                if rig_data is not None and isinstance(rig_data.source_document, dict)
+            rig_json_path = self.resources.rig_json_path_for_depot(rig_depot)
+            rig_json = self.resources.rig_json_for_depot(rig_depot)
+            rig_data = (
+                self.resources.rig_data_for_path(rig_json_path, read_rig)
+                if rig_json_path
                 else None
             )
             if not rig_name or not rig_json_path or rig_json is None or rig_data is None:
@@ -410,74 +404,48 @@ class EntityRigService:
         runtime.base_rig_path = runtime.rig_json_path_by_component_name.get(runtime.base_rig_name, '')
 
         animation_source_component = None
-        if self.import_animations:
-            for component in ordered_components:
-                gameplay_anims = component.get('animations', {}).get('gameplay')
-                if not gameplay_anims:
+        for component in ordered_components:
+            gameplay_anims = component.get('animations', {}).get('gameplay')
+            if not gameplay_anims:
+                continue
+            try:
+                anim_depot = gameplay_anims[0]['animSet']['DepotPath']['$value']
+            except (KeyError, IndexError, TypeError):
+                continue
+            runtime.animation_path = self.resources.resolve_export(anim_depot, '.anims.glb') or ''
+            if runtime.animation_path:
+                animation_source_component = component
+                break
+
+        if not runtime.animation_path and base_component is not None:
+            base_rig_depot = depot_path_value(base_component, 'rig')
+            base_rig_key = norm_path_key(depot_to_local_path(self.source_root, base_rig_depot))
+            for anim_path in self.animation_files:
+                anim_json_path = self.resources.resolve_export(anim_path, '.anims.json')
+                if not anim_json_path:
                     continue
-                try:
-                    anim_depot = gameplay_anims[0]['animSet']['DepotPath']['$value']
-                except (KeyError, IndexError, TypeError):
-                    continue
-                runtime.animation_path = self.resources.resolve_export(
-                    anim_depot,
-                    '.anims.glb',
-                ) or ''
-                if runtime.animation_path:
-                    animation_source_component = component
+                anim_json = self.resources.load_json(anim_json_path)
+                anim_rig_depot = (
+                    anim_json.get('Data', {}).get('RootChunk', {}).get('rig', {}).get('DepotPath', {}).get('$value')
+                    if anim_json is not None else ''
+                )
+                if anim_rig_depot and norm_path_key(depot_to_local_path(self.source_root, anim_rig_depot)) == base_rig_key:
+                    runtime.animation_path = anim_path
+                    animation_source_component = base_component
                     break
 
-            if not runtime.animation_path and base_component is not None:
-                base_rig_depot = depot_path_value(base_component, 'rig')
-                base_rig_key = norm_path_key(
-                    depot_to_local_path(self.source_root, base_rig_depot)
-                )
-                for anim_path in self.animation_files:
-                    anim_json_path = self.resources.resolve_export(
-                        anim_path,
-                        '.anims.json',
-                    )
-                    if not anim_json_path:
-                        continue
-                    anim_json = self.resources.load_json(anim_json_path)
-                    anim_rig_depot = (
-                        anim_json.get('Data', {})
-                        .get('RootChunk', {})
-                        .get('rig', {})
-                        .get('DepotPath', {})
-                        .get('$value')
-                        if anim_json is not None else ''
-                    )
-                    if (
-                        anim_rig_depot
-                        and norm_path_key(
-                            depot_to_local_path(
-                                self.source_root,
-                                anim_rig_depot,
-                            )
-                        ) == base_rig_key
-                    ):
-                        runtime.animation_path = anim_path
-                        animation_source_component = base_component
-                        break
-
-            if runtime.animation_path:
-                source_rig_name = (
-                    component_name(animation_source_component)
-                    if animation_source_component is not None
-                    else runtime.base_rig_name
-                )
-                runtime.animation_source_rig_path = (
-                    runtime.rig_json_path_by_component_name.get(
-                        source_rig_name,
-                        runtime.base_rig_path,
-                    )
-                )
-            else:
-                print(
-                    'no animation GLB found for the ordered animated '
-                    'components'
-                )
+        if runtime.animation_path:
+            source_rig_name = (
+                component_name(animation_source_component)
+                if animation_source_component is not None
+                else runtime.base_rig_name
+            )
+            runtime.animation_source_rig_path = runtime.rig_json_path_by_component_name.get(
+                source_rig_name,
+                runtime.base_rig_path,
+            )
+        else:
+            print('no animation GLB found for the ordered animated components')
 
         if ordered_rig_datas and runtime.base_rig_path:
             merged_rig_data, runtime.meta_rig_metadata = merge_rig_datas(
@@ -490,7 +458,6 @@ class EntityRigService:
                 ordered_rig_paths,
                 self.entity_name,
                 merged_rig_data=merged_rig_data,
-                rig_repository=self.resources.rigs,
             )
             if is_live_armature_object(runtime.rig):
                 cache_armature_bones(runtime.rig)
@@ -525,8 +492,7 @@ class EntityRigService:
             print('no entAnimatedComponent rig found in the entity or selected appearances')
 
         runtime.ordered_rig_paths = tuple(ordered_rig_paths)
-        if self.import_animations:
-            self._import_animation(runtime)
+        self._import_animation(runtime)
         return runtime
 
     def _import_animation(self, runtime: EntityRigRuntime) -> None:
@@ -538,7 +504,7 @@ class EntityRigService:
                 "because the JSON MetaRig was not created"
             )
             print(message)
-            self.warnings.append(message)
+            self.errors.append(message)
             return
         try:
             import_animset_to_metarig(
@@ -555,4 +521,4 @@ class EntityRigService:
             )
             print(message)
             print(traceback.format_exc())
-            self.warnings.append(message)
+            self.errors.append(message)

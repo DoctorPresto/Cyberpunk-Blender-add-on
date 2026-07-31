@@ -1,25 +1,16 @@
 from __future__ import annotations
-from ...blender.transactions import track_created_datablock
 
+import json
 import os
 from typing import Any, Iterable, Optional
 
 import bpy
 
-from ...animation.animgraph_constants import ANIMGRAPH_TREE_ID
-from ...importers.animgraph import AnimGraphParser
-from ...exporters.animgraph import encode_wolvenkit_json
-from ...blender.animgraph.validation import roundtrip as roundtrip_audit
-from ...assetio import animgraph_json as json_io
-from .animgraph_codec import (
-    AnimGraphPatchError,
-    dumps_pretty,
-    patch_wolvenkit_payload,
-    strip_private_export_metadata,
-    validate_payload,
-    write_json,
-)
-from .io import import_chains_data
+from ...animgraph.constants import ANIMGRAPH_TREE_ID
+from ...animgraph.parser import AnimGraphParser
+from ...animgraph.json_encoder import encode_wolvenkit_json
+from ...animgraph import roundtrip_audit
+from . import animgraph_codec, io
 
 
 _SOURCE_TEXT_PREFIX = ".CP77_AnimGraph_Source_"
@@ -64,7 +55,7 @@ def store_source_text(rig: bpy.types.Object, raw_text: str, filepath: str) -> bp
     text = bpy.data.texts.get(name) if name else None
     if text is None:
         base = _source_text_name(rig)
-        text = bpy.data.texts.get(base) or track_created_datablock("texts", bpy.data.texts.new(base))
+        text = bpy.data.texts.get(base) or bpy.data.texts.new(base)
     text.clear()
     text.write(str(raw_text or ""))
     rig.dangle_state.animgraph_source_text = text.name
@@ -77,23 +68,27 @@ def source_text(rig: bpy.types.Object) -> Optional[bpy.types.Text]:
     return bpy.data.texts.get(name) if name else None
 
 
+
 def _decode_json_text(raw: str) -> dict:
-    value = json_io.loads(raw)
+    try:
+        value = json.loads(raw)
+    except RecursionError:
+        value = io._loads_iterative(raw)
     if not isinstance(value, dict):
-        raise AnimGraphPatchError("AnimGraph JSON root must be an object")
+        raise animgraph_codec.AnimGraphPatchError("AnimGraph JSON root must be an object")
     return value
 
 def load_source_payload(rig: bpy.types.Object) -> dict:
     text = source_text(rig)
     if text is None:
-        raise AnimGraphPatchError(
+        raise animgraph_codec.AnimGraphPatchError(
             "This Dangle rig has no imported AnimGraph source document. Import a .animgraph.json first."
         )
     raw = text.as_string()
     try:
         return _decode_json_text(raw)
     except Exception as exc:
-        raise AnimGraphPatchError(f"Stored AnimGraph source JSON is invalid: {exc}") from exc
+        raise animgraph_codec.AnimGraphPatchError(f"Stored AnimGraph source JSON is invalid: {exc}") from exc
 
 
 def _tree_name_for_path(filepath: str, rig: bpy.types.Object) -> str:
@@ -110,10 +105,10 @@ def create_graph_tree(
     context: Optional[bpy.types.Context] = None,
 ) -> bpy.types.NodeTree:
     old_name = str(getattr(rig.dangle_state, "animgraph_tree_name", "") or "")
-    tree = track_created_datablock("node_groups", bpy.data.node_groups.new(
+    tree = bpy.data.node_groups.new(
         name=_tree_name_for_path(filepath, rig),
         type=ANIMGRAPH_TREE_ID,
-    ))
+    )
     try:
         parser = AnimGraphParser(tree)
         parser.execute(payload, context)
@@ -140,7 +135,7 @@ def import_into_both_editors(
     with open(filepath, "r", encoding="utf-8-sig") as stream:
         raw_text = stream.read()
     payload = _decode_json_text(raw_text)
-    count = import_chains_data(payload, rig.dangle_state)
+    count = io.import_chains_data(payload, rig.dangle_state)
     store_source_text(rig, raw_text, filepath)
     try:
         tree = create_graph_tree(payload, filepath, rig, context)
@@ -194,7 +189,7 @@ def validate_state_against_rig(rig: bpy.types.Object) -> list[str]:
 
 def validate_imported_document(rig: bpy.types.Object) -> dict:
     payload = load_source_payload(rig)
-    report = validate_payload(payload)
+    report = animgraph_codec.validate_payload(payload)
     missing = validate_state_against_rig(rig)
     report["missingBones"] = missing
     if missing:
@@ -218,21 +213,21 @@ def export_from_specialist_editor(
 ) -> dict:
     missing = validate_state_against_rig(rig)
     if missing:
-        raise AnimGraphPatchError(
+        raise animgraph_codec.AnimGraphPatchError(
             f"Rig is missing {len(missing)} referenced bone(s): {', '.join(missing[:12])}"
         )
 
     payload = load_source_payload(rig)
-    patch_wolvenkit_payload(
+    animgraph_codec.patch_wolvenkit_payload(
         payload,
         rig.dangle_state,
         export_path=filepath,
     )
-    report = validate_payload(payload)
+    report = animgraph_codec.validate_payload(payload)
     if not report.get("ready"):
-        raise AnimGraphPatchError("; ".join(report.get("errors", ())))
+        raise animgraph_codec.AnimGraphPatchError("; ".join(report.get("errors", ())))
 
-    write_json(filepath, payload)
+    animgraph_codec.write_json(filepath, payload)
     with open(filepath, "r", encoding="utf-8") as stream:
         raw_text = stream.read()
     clean_payload = _decode_json_text(raw_text)
@@ -251,16 +246,16 @@ def sync_editor_to_graph(
     context: Optional[bpy.types.Context] = None,
 ) -> bpy.types.NodeTree:
     payload = load_source_payload(rig)
-    patch_wolvenkit_payload(
+    animgraph_codec.patch_wolvenkit_payload(
         payload,
         rig.dangle_state,
         update_header=False,
     )
-    report = validate_payload(payload)
+    report = animgraph_codec.validate_payload(payload)
     if not report.get("ready"):
-        raise AnimGraphPatchError("; ".join(report.get("errors", ())))
-    clean = strip_private_export_metadata(payload)
-    raw_text = dumps_pretty(clean)
+        raise animgraph_codec.AnimGraphPatchError("; ".join(report.get("errors", ())))
+    clean = animgraph_codec.strip_private_export_metadata(payload)
+    raw_text = animgraph_codec.dumps_pretty(clean)
     store_source_text(rig, raw_text, rig.dangle_state.animgraph_source_path)
     tree = create_graph_tree(
         clean,
@@ -286,13 +281,13 @@ def sync_graph_to_editor(
 ) -> tuple[int, dict]:
     tree = bpy.data.node_groups.get(str(rig.dangle_state.animgraph_tree_name or ""))
     if tree is None or getattr(tree, "bl_idname", "") != ANIMGRAPH_TREE_ID:
-        raise AnimGraphPatchError("No synchronized AnimGraph tree exists for this rig")
+        raise animgraph_codec.AnimGraphPatchError("No synchronized AnimGraph tree exists for this rig")
     payload = encode_wolvenkit_json(tree)
-    report = validate_payload(payload)
+    report = animgraph_codec.validate_payload(payload)
     if not report.get("ready"):
-        raise AnimGraphPatchError("; ".join(report.get("errors", ())))
-    count = import_chains_data(payload, rig.dangle_state)
-    raw_text = dumps_pretty(payload)
+        raise animgraph_codec.AnimGraphPatchError("; ".join(report.get("errors", ())))
+    count = io.import_chains_data(payload, rig.dangle_state)
+    raw_text = animgraph_codec.dumps_pretty(payload)
     store_source_text(rig, raw_text, rig.dangle_state.animgraph_source_path)
     return count, report
 
@@ -415,7 +410,7 @@ def switch_to_editor_view(
     key = _area_key(area)
     state = _VIEW_RETURN_STATE.pop(key, None) if key is not None else None
     if state is None:
-        raise AnimGraphPatchError(
+        raise animgraph_codec.AnimGraphPatchError(
             "This Graph View was not opened from the Dangle editor."
         )
 
@@ -425,7 +420,7 @@ def switch_to_editor_view(
         rig_name = str(state.get("rig_name", "") or "")
         rig = bpy.data.objects.get(rig_name) if rig_name else None
     if rig is None or getattr(rig, "type", "") != 'ARMATURE':
-        raise AnimGraphPatchError(
+        raise animgraph_codec.AnimGraphPatchError(
             "The Dangle rig associated with this graph is no longer available."
         )
 

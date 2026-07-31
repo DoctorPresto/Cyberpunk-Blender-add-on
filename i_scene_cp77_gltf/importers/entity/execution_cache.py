@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 from collections.abc import Callable, Iterable
-from dataclasses import dataclass
 from typing import Any
 
 from ..common.entity_data import (
@@ -10,31 +9,6 @@ from ..common.entity_data import (
 )
 from ..common.paths import depot_path_value
 from .policy import NON_VISUAL_MESH_COMPONENT_TYPES
-
-
-@dataclass(frozen=True, slots=True)
-class ComponentPassIndex:
-    components: tuple[dict, ...]
-    by_name: dict[str, dict]
-    rig_components: tuple[dict, ...]
-    slot_components: tuple[dict, ...]
-    mesh_components: tuple[dict, ...]
-    transform_animator_components: tuple[dict, ...]
-
-
-def merge_component_groups(*component_groups):
-    merged = []
-    seen = set()
-    for components in component_groups:
-        for component in components or ():
-            if type(component) is not dict:
-                continue
-            identity = id(component)
-            if identity in seen:
-                continue
-            seen.add(identity)
-            merged.append(component)
-    return tuple(merged), tuple(id(component) for component in merged)
 
 
 class EntityExecutionCache:
@@ -216,39 +190,34 @@ def build_chunk_lookup(chunks, target_key, handle_key="HandleId", cache=None):
 
 
 def _build_component_pass_index(components):
-    indexed_components = []
-    by_name = {}
-    rig_components = []
-    slot_components = []
-    mesh_components = []
-    transform_animator_components = []
+    indexed = {
+        "components": [],
+        "by_name": {},
+        "rig_components": [],
+        "slot_components": [],
+        "mesh_components": [],
+        "transform_animator_components": [],
+    }
     for component in components or ():
         if type(component) is not dict:
             continue
-        indexed_components.append(component)
+        indexed["components"].append(component)
         name = component_name(component)
         if name:
-            by_name.setdefault(name, component)
+            indexed["by_name"].setdefault(name, component)
         component_type = component.get("$type")
         if depot_path_value(component, "rig"):
-            rig_components.append(component)
+            indexed["rig_components"].append(component)
         if isinstance(component.get("slots"), list):
-            slot_components.append(component)
+            indexed["slot_components"].append(component)
         if (
             ("mesh" in component or "graphicsMesh" in component)
             and component_type not in NON_VISUAL_MESH_COMPONENT_TYPES
         ):
-            mesh_components.append(component)
+            indexed["mesh_components"].append(component)
         if component_type == "gameTransformAnimatorComponent":
-            transform_animator_components.append(component)
-    return ComponentPassIndex(
-        components=tuple(indexed_components),
-        by_name=by_name,
-        rig_components=tuple(rig_components),
-        slot_components=tuple(slot_components),
-        mesh_components=tuple(mesh_components),
-        transform_animator_components=tuple(transform_animator_components),
-    )
+            indexed["transform_animator_components"].append(component)
+    return indexed
 
 
 def build_component_pass_index(
@@ -267,8 +236,6 @@ def build_component_pass_index(
 
 
 class ComponentHandleLookup:
-    __slots__ = ("default_lookup", "by_component_id")
-
     def __init__(self, default_lookup=None):
         self.default_lookup = default_lookup or {}
         self.by_component_id = {}

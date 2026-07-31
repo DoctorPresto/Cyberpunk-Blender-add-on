@@ -1,13 +1,19 @@
+import os
 
 import bpy
 
-from ..materials.blender.images import imageFromRelPath
-from ..materials.blender.nodes import CreateShaderNodeRGB, CreateShaderNodeValue, bsdf_socket_names, create_node, loc
+if __name__ != "__main__":
+    from ..main.common import *
 
-from .mat_common import MaterialTypeBase, create_normal_map_rel
+from .mat_common import create_normal_map_rel
 
 
-class Glass(MaterialTypeBase):
+class Glass:
+    def __init__(self, BasePath, image_format, ProjPath):
+        self.BasePath = BasePath
+        self.ProjPath = ProjPath
+        self.image_format = image_format
+
     def create(self, Data, Mat):
         CurMat = Mat.node_tree
         pBDSF = CurMat.nodes[loc('Principled BSDF')]
@@ -125,3 +131,22 @@ class Glass(MaterialTypeBase):
 
 # The above is the code thats for the import plugin below is to allow testing/dev, you can run this file to import something
 
+if __name__ == "__main__":
+    import sys
+
+    sys.path.append("F://CPmod//ImportPluginGIT//i_scene_cp77_gltf//material_types")
+    sys.path.append("F://CPmod//ImportPluginGIT//i_scene_cp77_gltf//main")
+    import json
+    from common import *
+
+    filepath = "F:\\CPmod\\porsche\\source\\raw\\base\\vehicles\\sport\\v_sport2_porsche_911turbo\\entities\\meshes\\v_sport2_porsche_911turbo__ext01_body_01.glb"
+    fileBasePath = os.path.splitext(filepath)[0]
+    file = open(fileBasePath + ".Material.json", mode='r')
+    obj = json.loads(file.read())
+    BasePath = str(obj["MaterialRepo"]) + "\\"
+
+    bpyMat = bpy.data.materials.new("TestMat")
+    bpyMat.use_nodes = True
+    rawMat = obj['Materials'][9]
+    glass = Glass(BasePath, "png")
+    glass.create(rawMat["Data"], bpyMat)

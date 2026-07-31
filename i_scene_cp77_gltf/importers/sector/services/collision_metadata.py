@@ -1,5 +1,4 @@
 from __future__ import annotations
-from ....blender.transactions import track_created_datablock
 
 import base64
 import copy
@@ -8,7 +7,7 @@ import hashlib
 
 import bpy
 
-from ....assetio.values import vector3
+from ...common.values import vector3
 
 
 COLLISION_METADATA_CONTRACTS = {
@@ -70,7 +69,7 @@ class CollisionMetadataService:
                 shared=False,
             )
 
-        obj = track_created_datablock("objects", bpy.data.objects.new(name, mesh))
+        obj = bpy.data.objects.new(name, mesh)
         if mesh is None:
             obj.empty_display_type = "CUBE"
             obj.empty_display_size = 1.0

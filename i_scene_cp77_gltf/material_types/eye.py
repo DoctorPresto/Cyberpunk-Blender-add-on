@@ -1,13 +1,15 @@
-from ..assetio.catalog import ResourceKind
-from ..materials.resources import load_material_document
-from ..assetio.resolver import resolve_rooted_path
-from ..materials.blender.images import imageFromRelPath
-from ..materials.blender.nodes import CreateShaderNodeValue, bsdf_socket_names, create_node, loc
+from ..jsontool import JSONTool
+from ..main.common import *
 
-from .mat_common import MaterialTypeBase, create_normal_map_rel, populate_color_ramp
+from .mat_common import create_normal_map_rel, populate_color_ramp
 
 
-class Eye(MaterialTypeBase):
+class Eye:
+    def __init__(self, BasePath, image_format, ProjPath):
+        self.BasePath = BasePath
+        self.ProjPath = ProjPath
+        self.image_format = image_format
+
     def create(self, Data, Mat):
         CurMat = Mat.node_tree
 
@@ -78,13 +80,10 @@ class Eye(MaterialTypeBase):
             iMask = create_node(CurMat.nodes, "ShaderNodeTexImage", (-1000, 500), label='Iris Mask', image=iMaskImg)
 
         if "IrisColorGradient" in Data:
-            profile_path = resolve_rooted_path(
-                Data["IrisColorGradient"] + ".json",
-                project_root=self.ProjPath,
-                depot_root=self.BasePath,
-                extensions=(".gradient.json",),
-            )
-            profile = load_material_document(profile_path, expected_kind=ResourceKind.GRADIENT).root
+            profile = JSONTool.openJSON(
+                Data["IrisColorGradient"] + ".json", mode='r', DepotPath=self.BasePath, ProjPath=self.ProjPath
+                )
+            profile = profile["Data"]["RootChunk"]
 
             igradNode = CurMat.nodes.new("ShaderNodeValToRGB")
             igradNode.location = (-600, 500)

@@ -10,31 +10,11 @@ from ..common.paths import (
     normalize_depot_path,
     path_key,
 )
-from ...assetio.index import indexed_files
-from ...animation.rig import RigRepository
-from ...meshes import MeshRepository
-from ...physics import PhysicsRepository
-from .repository import EntityRepository
-from ..appearance.repository import AppearanceRepository
+from ..common.resources import MESH_GLB_EXTENSIONS, indexed_files
 
 _UNSET = object()
 
 _SOURCE_RAW_PATTERN = re.compile(r"(?:^|/)source/raw(?=$|/)", re.IGNORECASE)
-
-ENTITY_INDEX_EXTENSIONS = (
-    ".ent.json",
-    ".app.json",
-    ".mesh.json",
-    ".glb",
-    ".physicalscene.glb",
-    ".physicalscene.json",
-    ".w2mesh.glb",
-    ".w2mesh.json",
-    ".anims.glb",
-    ".anims.json",
-    ".rig.json",
-    ".phys.json",
-)
 
 
 def split_source_raw_root(filepath: str) -> tuple[str, str]:
@@ -59,28 +39,29 @@ class EntityResourceService:
         *,
         asset_index: Any,
         source_root: str,
-        documents: Any,
-        warnings: list[str],
+        json_tool: Any,
+        errors: list[str],
         component_depot_path: Callable[[dict], str],
         component_mesh_appearance: Callable[[dict], str],
         component_enabled: Callable[[dict], bool],
     ) -> None:
         self.asset_index = asset_index
         self.source_root = source_root
-        self.documents = documents
-        self.warnings = warnings
+        self.json_tool = json_tool
+        self.errors = errors
         self._component_depot_path = component_depot_path
         self._component_mesh_appearance = component_mesh_appearance
         self._component_enabled = component_enabled
 
         self._indexed_files: dict[str, tuple[str, ...]] = {}
         self._resolved_exports: dict[tuple[str, Any], str] = {}
-        self.entities = EntityRepository(documents, asset_index=asset_index)
-        self.appearances = AppearanceRepository(documents, asset_index=asset_index)
-        self.rigs = RigRepository(documents, asset_index=asset_index)
-        self.meshes = MeshRepository(asset_index)
-        self._physics = None
+        self._parsed_entities: dict[str, Any] = {}
+        self._parsed_apps: dict[str, Any] = {}
         self._json_documents: dict[str, Any] = {}
+        self._root_chunks: dict[str, Any] = {}
+        self._rig_json_paths: dict[str, str] = {}
+        self._rig_json_roots: dict[str, Any] = {}
+        self._rig_data_by_path: dict[str, Any] = {}
         self._component_mesh_info: dict[int, tuple[str, str, str, str, bool]] = {}
         self._component_mesh_json: dict[str, Any] = {}
         self._master_group_objects: dict[int, tuple[Any, ...]] = {}
@@ -124,23 +105,25 @@ class EntityResourceService:
             self._resolved_exports[cache_key] = cached
         return cached
 
-    def _load_repository(self, repository, filepath):
-        issue_start = len(repository.issues)
-        value = repository.load(filepath)
-        for issue in repository.issues[issue_start:]:
-            if issue.message not in self.warnings:
-                self.warnings.append(issue.message)
-        return value
-
     def load_entity(self, filepath: str) -> Any:
         if not filepath:
             return None
-        return self._load_repository(self.entities, filepath)
+        key = absolute_path_key(filepath)
+        return self._load_once(
+            self._parsed_entities,
+            key,
+            lambda: self.json_tool.load_entity(filepath, self.errors),
+        )
 
     def load_app(self, filepath: str) -> Any:
         if not filepath:
             return None
-        return self._load_repository(self.appearances, filepath)
+        key = absolute_path_key(filepath)
+        return self._load_once(
+            self._parsed_apps,
+            key,
+            lambda: self.json_tool.load_app(filepath, self.errors),
+        )
 
     def load_json(self, filepath: str) -> Any:
         if not filepath:
@@ -149,26 +132,54 @@ class EntityResourceService:
         return self._load_once(
             self._json_documents,
             key,
-            lambda: self.documents.payload(filepath),
+            lambda: self.json_tool.jsonload(filepath, self.errors),
         )
 
-    def resolve_rig(self, rig_depot: str) -> str:
-        return self.rigs.resolve(rig_depot) if rig_depot else ""
-
-    def load_rig(self, reference: str) -> Any:
-        if not reference:
+    def load_root_chunk(self, filepath: str) -> Any:
+        if not filepath:
             return None
-        return self._load_repository(self.rigs, reference)
+        key = absolute_path_key(filepath)
+        return self._load_once(
+            self._root_chunks,
+            key,
+            lambda: (
+                loaded.get("Data", {}).get("RootChunk")
+                if (loaded := self.load_json(filepath)) is not None
+                else None
+            ),
+        )
 
-    def load_physics(self, reference: str) -> Any:
-        if not reference:
+    def rig_json_path_for_depot(self, rig_depot: str) -> str:
+        if not rig_depot:
+            return ""
+        key = depot_path_key(rig_depot)
+        cached = self._rig_json_paths.get(key)
+        if cached is None:
+            cached = self.resolve_export(rig_depot, ".rig.json")
+            self._rig_json_paths[key] = cached
+        return cached
+
+    def rig_json_for_depot(self, rig_depot: str) -> Any:
+        if not rig_depot:
             return None
-        if self._physics is None:
-            self._physics = PhysicsRepository(
-                self.documents,
-                asset_index=self.asset_index,
-            )
-        return self._load_repository(self._physics, reference)
+        key = depot_path_key(rig_depot)
+        cached = self._rig_json_roots.get(key, _UNSET)
+        if cached is _UNSET:
+            rig_path = self.rig_json_path_for_depot(rig_depot)
+            cached = self.load_root_chunk(rig_path) if rig_path else None
+            self._rig_json_roots[key] = cached
+        return cached
+
+    def rig_data_for_path(self, filepath: str, loader: Callable[[str], Any]) -> Any:
+        """Load one parsed RigData object per normalized rig path."""
+        if not filepath:
+            return None
+        normalized = absolute_path_key(filepath)
+        cached = self._rig_data_by_path.get(normalized, _UNSET)
+        if cached is _UNSET:
+            cached = loader(filepath)
+            self._rig_data_by_path[normalized] = cached
+        return cached
 
     def component_mesh_info(self, component: dict) -> tuple[str, str, str, str, bool]:
         """Return the mesh descriptor tuple for one component identity."""
@@ -181,8 +192,10 @@ class EntityResourceService:
         if not depot_path:
             cached = ("", "", "", "", True)
         else:
-            mesh_asset = self.meshes.resolve(depot_path, include_sidecar=False)
-            mesh_path = mesh_asset.local_path if mesh_asset is not None else ""
+            mesh_path = self.resolve_export(
+                depot_path,
+                MESH_GLB_EXTENSIONS,
+            )
             mesh_name = os.path.basename(depot_path.replace("\\", os.sep))
             cached = (
                 depot_path,
@@ -202,13 +215,8 @@ class EntityResourceService:
         key = depot_path_key(depot_path)
         cached = self._component_mesh_json.get(key, _UNSET)
         if cached is _UNSET:
-            json_path = self.meshes.resolve_sidecar(depot_path)
-            loaded = self.load_json(json_path) if json_path else None
-            cached = (
-                loaded.get("Data", {}).get("RootChunk")
-                if isinstance(loaded, dict)
-                else None
-            )
+            json_path = self.resolve_export(depot_path, ".mesh.json")
+            cached = self.load_root_chunk(json_path) if json_path else None
             self._component_mesh_json[key] = cached
         return cached
 
@@ -224,14 +232,13 @@ class EntityResourceService:
         """Release import-scoped references after execution."""
         self._indexed_files.clear()
         self._resolved_exports.clear()
-        self.entities.clear()
-        self.appearances.clear()
-        self.rigs.clear()
-        self.meshes.clear()
-        if self._physics is not None:
-            self._physics.clear()
-            self._physics = None
+        self._parsed_entities.clear()
+        self._parsed_apps.clear()
         self._json_documents.clear()
+        self._root_chunks.clear()
+        self._rig_json_paths.clear()
+        self._rig_json_roots.clear()
+        self._rig_data_by_path.clear()
         self._component_mesh_info.clear()
         self._component_mesh_json.clear()
         self._master_group_objects.clear()

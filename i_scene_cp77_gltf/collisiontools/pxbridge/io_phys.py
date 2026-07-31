@@ -1,5 +1,3 @@
-from ...blender.transactions import track_created_datablock
-from ...assetio.values import cname_value
 import base64
 import json
 from datetime import datetime, timezone
@@ -7,10 +5,7 @@ from datetime import datetime, timezone
 import bpy
 from mathutils import Vector
 
-from .physx_utils import bits_to_int, update_collision_bits
-from .presets_lib import COLLISION_LAYERS, COLLISION_PRESETS, QUERY_LAYERS
-from .viz import invalidate_visualization_cache
-from .capability import require_bridge
+from . import physx_utils, viz
 
 
 def get_physx_shape_type_mapping(physx_type):
@@ -28,7 +23,7 @@ def get_physx_shape_type_mapping(physx_type):
 def extract_convex_verts_from_cooked(cooked_data):
     """ Extract vertex positions from PhysX cooked data """
     try:
-        _bridge = require_bridge()
+        from . import pxbridge as _bridge
         raw_data = base64.b64decode(cooked_data.encode('ascii'))
         geom_data = _bridge.get_cooked_geometry('CONVEX', raw_data)
         vertices = []
@@ -53,7 +48,7 @@ def ensure_physx_initialized(context=bpy.context):
     if scene_physx and getattr(scene_physx, "is_initialized", False):
         return True
     try:
-        _bridge = require_bridge()
+        from . import pxbridge as _bridge
     except Exception as exc:
         print(f"PhysX Bridge missing: {exc}")
         return False
@@ -107,8 +102,14 @@ def _collider_local_transform(cdata):
         )
 
 
+def _cname_value(value, default=''):
+    if isinstance(value, dict):
+        return value.get('$value', default)
+    return value if value is not None else default
+
+
 def _physmat_name(value, default='Default'):
-    name = cname_value(value, default)
+    name = _cname_value(value, default)
     if name is None:
         return default
     name = str(name)
@@ -178,7 +179,7 @@ def _filter_preset_name(filter_data):
         return ''
     wrapper = filter_data.get('Data') if isinstance(filter_data.get('Data'), dict) else filter_data
     preset = wrapper.get('preset') if isinstance(wrapper, dict) else None
-    return cname_value(preset)
+    return _cname_value(preset)
 
 
 def _apply_filter_data(shape_item, filter_data, context):
@@ -187,7 +188,7 @@ def _apply_filter_data(shape_item, filter_data, context):
         return
     try:
         shape_item.collision_preset = preset_name
-        update_collision_bits(shape_item, context)
+        physx_utils.update_collision_bits(shape_item, context)
     except Exception:
         shape_item.collision_preset = preset_name
 
@@ -272,7 +273,7 @@ def _add_shape_to_actor(
 
         if ensure_physx_initialized(context) and shape_points:
             try:
-                _bridge = require_bridge()
+                from . import pxbridge as _bridge
                 cooked = _bridge.cook_mesh('CONVEX', shape_points, [], 256)
                 if cooked:
                     shape_item.cooked_data = base64.b64encode(cooked).decode('ascii')
@@ -304,7 +305,7 @@ def _add_shape_to_actor(
         shape_item.dim_y = 0.5
         shape_item.dim_z = 0.5
 
-    invalidate_visualization_cache()
+    viz.invalidate_visualization_cache()
     return shape_item
 
 
@@ -315,7 +316,7 @@ def _import_red_collider_data(
     ensure_physx_initialized(context)
     if actor_obj is None:
         actor_name = submesh_name or cdata.get('$type', 'Collider')
-        actor_obj = track_created_datablock("objects", bpy.data.objects.new(actor_name, None))
+        actor_obj = bpy.data.objects.new(actor_name, None)
         collection.objects.link(actor_obj)
     _register_actor(actor_obj, actor_type, context, mass=mass, inertia=inertia, com_offset=com_offset)
     if local_pos is None or local_rot is None:
@@ -371,7 +372,7 @@ def import_collider_as_actor(
 
 
 def export_actor_item_to_phys(actor_item, filepath):
-    presets_lib = presets_lib
+    presets_lib = physx_utils.presets_lib
 
     if not actor_item or not actor_item.obj_ref:
         print("ERROR: Invalid actor item")
@@ -397,7 +398,7 @@ def export_actor_item_to_phys(actor_item, filepath):
     colliders = []
     current_handle = 1
 
-    col_layer_offset = len(COLLISION_LAYERS)
+    col_layer_offset = len(presets_lib.COLLISION_LAYERS)
 
     for shape in px_obj.shapes:
         preset_name = shape.collision_preset if shape.collision_preset else "World Static"
@@ -409,21 +410,21 @@ def export_actor_item_to_phys(actor_item, filepath):
         query_mask = 0
 
         found_preset = False
-        if preset_name in COLLISION_PRESETS:
-            data = COLLISION_PRESETS[preset_name]
+        if preset_name in presets_lib.COLLISION_PRESETS:
+            data = presets_lib.COLLISION_PRESETS[preset_name]
             for layer in data[0]:
-                if layer in COLLISION_LAYERS:
-                    bit = COLLISION_LAYERS.index(layer)
+                if layer in presets_lib.COLLISION_LAYERS:
+                    bit = presets_lib.COLLISION_LAYERS.index(layer)
                     sim_group |= (1 << bit)
 
             for layer in data[1]:
-                if layer in COLLISION_LAYERS:
-                    bit = COLLISION_LAYERS.index(layer)
+                if layer in presets_lib.COLLISION_LAYERS:
+                    bit = presets_lib.COLLISION_LAYERS.index(layer)
                     sim_target_mask |= (1 << bit)
 
             for layer in data[2]:
-                if layer in QUERY_LAYERS:
-                    idx = QUERY_LAYERS.index(layer)
+                if layer in presets_lib.QUERY_LAYERS:
+                    idx = presets_lib.QUERY_LAYERS.index(layer)
                     bit = col_layer_offset + idx
                     query_mask |= (1 << bit)
 
@@ -431,7 +432,7 @@ def export_actor_item_to_phys(actor_item, filepath):
 
         if not found_preset:
             print(f"Warning: Preset '{preset_name}' not found. Using truncated UI values.")
-            sim_group = bits_to_int(shape.filter_group)
+            sim_group = physx_utils.bits_to_int(shape.filter_group)
 
         filter_handle_id = str(current_handle + 1)
         shape_handle_id = str(current_handle)
@@ -586,22 +587,21 @@ def export_actor_item_to_phys(actor_item, filepath):
 
 def process_phys_import(filepath, target_obj, context):
     try:
-        _bridge = require_bridge()
+        from . import pxbridge as _bridge
     except ImportError:
         _bridge = None
         print("PhysX Bridge missing: Imported colliders will not be cooked.")
 
     try:
-        from ...assetio.documents import DocumentSession
-        from ...physics import PhysicsRepository
-        with DocumentSession() as documents:
-            resource = PhysicsRepository(documents).load(filepath, required=True)
+        with open(filepath, 'r') as f:
+            data = json.load(f)
     except Exception as e:
-        print(f"Error reading physics resource: {e}")
+        print(f"Error reading JSON: {e}")
         return False
 
     try:
-        bodies = resource.bodies
+        root = data.get('Data', {}).get('RootChunk', {})
+        bodies = root.get('bodies', [])
 
         if not bodies:
             print("No bodies found in .phys.json")
@@ -653,7 +653,7 @@ def process_phys_import(filepath, target_obj, context):
                 preset_name = preset_info.get('$value', 'None')
                 try:
                     shape_item.collision_preset = preset_name
-                    update_collision_bits(shape_item, context)
+                    physx_utils.update_collision_bits(shape_item, context)
                 except TypeError:
                     pass
             else:
@@ -709,7 +709,7 @@ def process_phys_import(filepath, target_obj, context):
                 new_item = context.scene.physx.actors.add()
                 new_item.obj_ref = target_obj
                 context.scene.physx.actor_list_index = len(context.scene.physx.actors) - 1
-            invalidate_visualization_cache()
+            viz.invalidate_visualization_cache()
         return True
 
     except Exception as e:
@@ -857,7 +857,7 @@ class PHYSX_OT_load_cooked(bpy.types.Operator):
             self.report({'INFO'}, f"Loaded NXS data: {len(raw_data)} bytes")
         except Exception as e:
             self.report({'ERROR'}, str(e))
-        invalidate_visualization_cache()
+        viz.invalidate_visualization_cache()
         return {'FINISHED'}
 
     def invoke(self, context, event):
@@ -872,7 +872,7 @@ class PHYSX_OT_export_scene(bpy.types.Operator):
 
     def execute(self, context):
         try:
-            _bridge = require_bridge()
+            from . import pxbridge as _bridge
             if _bridge.export_scene(self.filepath):
                 self.report({'INFO'}, f"Scene Exported to {self.filepath}")
             else:
@@ -893,7 +893,7 @@ class PHYSX_OT_import_scene(bpy.types.Operator):
 
     def execute(self, context):
         try:
-            _bridge = require_bridge()
+            from . import pxbridge as _bridge
             if _bridge.import_scene(self.filepath):
                 self.report({'INFO'}, "Scene Imported successfully")
             else:

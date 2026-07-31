@@ -3,26 +3,25 @@ import json
 import os
 import re
 import traceback
-import time
 from array import array
 from functools import lru_cache
 
 import bpy
 
-from ...addon_identity import get_addon_preferences
-from ...materials.blender.cache import material_cache_counters, material_cache_stats
-
-from ..mesh import (
+from ..import_with_materials import (
+    CP77GLBimport,
     ensure_collection_material_coverage,
-    import_cyberpunk_glb,
 )
+from ...jsontool import JSONTool
+from ...main.setup import bcolors
 
 from .cache import (
+    acquire_json_cache,
     acquire_material_cache,
+    release_json_cache,
     release_material_cache,
 )
-from ...meshes import MESH_COOKED_NAME_SUFFIXES, MeshRepository
-from ...blender.transactions import current_import_transaction, track_created_datablock
+from .resources import MESH_COOKED_NAME_SUFFIXES, resolve_mesh_export
 from .material_appearances import (
     is_source_default_appearance,
     resolve_appearance_materials,
@@ -43,31 +42,6 @@ APPEARANCE_ASSIGNMENT_VERSION = 4
 
 _SUBMESH_INDEX_CACHE = {}
 _JSON_APPS_CACHE = {}
-
-
-_DATA_COLLECTION_BY_OBJECT_TYPE = {
-    "MESH": "meshes",
-    "CURVE": "curves",
-    "ARMATURE": "armatures",
-    "LATTICE": "lattices",
-    "LIGHT": "lights",
-    "CAMERA": "cameras",
-}
-
-
-def _copy_object_for_transaction(source_obj):
-    obj = track_created_datablock("objects", source_obj.copy())
-    source_data = getattr(source_obj, "data", None)
-    if source_data is None:
-        return obj
-    copied_data = source_data.copy()
-    collection_name = _DATA_COLLECTION_BY_OBJECT_TYPE.get(
-        getattr(obj, "type", "")
-    )
-    if collection_name:
-        track_created_datablock(collection_name, copied_data)
-    obj.data = copied_data
-    return obj
 
 
 def clear_submesh_index_cache():
@@ -148,9 +122,8 @@ def _collection_matches_source(collection, source_key):
     if not source_key:
         return True
     stored = collection.get('source_glb', '')
-    # An untagged legacy master cannot safely prove source identity. Rebuild it
-    # under the hashed name instead of risking a same-basename asset collision.
-    return bool(stored) and _asset_source_key(stored) == source_key
+    # Accept legacy masters without source metadata.
+    return not stored or stored == source_key
 
 
 def get_group(meshname, meshAppearance, Masters, source_glb=''):
@@ -163,20 +136,6 @@ def get_group(meshname, meshAppearance, Masters, source_glb=''):
         group = Masters.children.get(groupname)
         if group is not None and _collection_matches_source(group, source_key):
             return group, groupname
-    if source_key:
-        requested_appearance = _appearance_name(meshAppearance)
-        for group in Masters.children:
-            if not _collection_matches_source(group, source_key):
-                continue
-            stored_appearance = _appearance_name(
-                group.get('appearance', '')
-            )
-            if requested_appearance:
-                if stored_appearance != requested_appearance:
-                    continue
-            elif stored_appearance not in ('', 'default'):
-                continue
-            return group, group.name
     return None, candidates[0]
 
 
@@ -280,7 +239,7 @@ def _deduplicate_master_source_armatures(master_collection, masters):
 def _json_apps_for_collection(collection, mesh_key):
     json_apps_raw = collection.get('json_apps')
     if not json_apps_raw:
-        print(f'No material json found for - {mesh_key}')
+        print(f'{bcolors.FAIL}No material json found for - {mesh_key}{bcolors.ENDC}')
         return None
 
     cache_key = collection.as_pointer()
@@ -291,10 +250,10 @@ def _json_apps_for_collection(collection, mesh_key):
     try:
         json_apps = json.loads(json_apps_raw)
     except json.JSONDecodeError:
-        print(f'Invalid material json found for - {mesh_key}')
+        print(f'{bcolors.FAIL}Invalid material json found for - {mesh_key}{bcolors.ENDC}')
         return None
     if not json_apps:
-        print(f'No material json found for - {mesh_key}')
+        print(f'{bcolors.FAIL}No material json found for - {mesh_key}{bcolors.ENDC}')
         return json_apps
 
     _JSON_APPS_CACHE[cache_key] = (json_apps_raw, json_apps)
@@ -611,9 +570,11 @@ def _copy_collection_objects(source_collection, target_collection, appearance, m
         if getattr(source_obj, 'type', None) == 'ARMATURE':
             source_armatures.append(source_obj.name)
             continue
-        obj = _copy_object_for_transaction(source_obj)
+        obj = source_obj.copy()
         object_map[source_obj] = obj
         copied_objects.append(obj)
+        if source_obj.data:
+            obj.data = source_obj.data.copy()
 
         if obj.type == 'MESH':
             diagnostics['meshObjects'] += 1
@@ -781,9 +742,9 @@ def _copy_collection_objects(source_collection, target_collection, appearance, m
     issue_count = len(diagnostics['issues'])
     if issue_count:
         print(
-            f'Appearance assignment warning for '
+            f'{bcolors.WARNING}Appearance assignment warning for '
             f'{mesh_key}@{requested_appearance}: {issue_count} unresolved '
-            f'submesh material mapping(s).'
+            f'submesh material mapping(s).{bcolors.ENDC}'
         )
     return diagnostics
 
@@ -796,9 +757,7 @@ def _ensure_appearance_variants(Masters, master_coll, mesh_key, source_key, apps
             continue
         if existing is not None:
             continue
-        new_coll = track_created_datablock(
-            "collections", bpy.data.collections.new(variant_name)
-        )
+        new_coll = bpy.data.collections.new(variant_name)
         new_coll['meshpath'] = mesh_key
         new_coll['appearance'] = app
         new_coll['source_glb'] = source_key
@@ -825,15 +784,14 @@ def _resolved_meshpath(mesh_data):
     return ''
 
 
-def _mesh_glb_path(mesh_repository, mesh_key, mesh_data):
-    """Resolve an explicit export or depot mesh reference through the active asset index."""
+def _mesh_glb_path(asset_index, mesh_key, mesh_data):
+    """Resolve an explicit export or depot mesh reference through datakrash."""
     meshpath = _resolved_meshpath(mesh_data)
     if meshpath:
-        asset = mesh_repository.resolve(meshpath)
-        if asset is not None:
-            return asset.local_path
-    asset = mesh_repository.resolve(mesh_key)
-    return asset.local_path if asset is not None else ""
+        resolved = resolve_mesh_export(asset_index, meshpath, warn=False)
+        if resolved:
+            return resolved
+    return resolve_mesh_export(asset_index, mesh_key, warn=False)
 
 
 def _appearance_requests_by_source(prepared_meshes):
@@ -852,40 +810,31 @@ def _appearance_requests_by_source(prepared_meshes):
 
 def meshes_from_mesheswapps(
         meshes_w_apps, *, asset_index, from_mesh_no=0, to_mesh_no=10000000,
-        with_mats=False, Masters=None, generate_overrides=False, mesh_repository=None,
-        document_session=None, material_resources=None, transaction=None,
+        with_mats=False, Masters=None, generate_overrides=False,
         ):
     if asset_index is None:
-        raise ValueError('meshes_from_mesheswapps requires an AssetIndexSnapshot')
+        raise ValueError('meshes_from_mesheswapps requires a DepotAssetIndex')
     if Masters is None:
         raise ValueError('meshes_from_mesheswapps requires a master collection')
-    mesh_repository = mesh_repository or MeshRepository(asset_index)
-    transaction = transaction or current_import_transaction()
-    failures = []
-    prepared_meshes = []
-    imported_source_count = 0
-    bulk_started = time.perf_counter()
-    cache_before = material_cache_counters() if with_mats else None
 
     material_cache_acquired = acquire_material_cache(with_mats)
+    owns_json_cache = False
     try:
+        owns_json_cache = acquire_json_cache(JSONTool)
         props = bpy.context.scene.cp77_panel_props
         context = bpy.context
         scene_collection = context.scene.collection
 
+        prepared_meshes = []
         for index, (mesh_key, mesh_data) in enumerate(meshes_w_apps.items()):
             if index < from_mesh_no or index > to_mesh_no:
                 continue
-            if not str(mesh_key).casefold().endswith(
-                MESH_COOKED_NAME_SUFFIXES
-            ):
+            if not str(mesh_key).endswith(MESH_COOKED_NAME_SUFFIXES):
                 continue
 
-            meshpath = _mesh_glb_path(mesh_repository, mesh_key, mesh_data)
+            meshpath = _mesh_glb_path(asset_index, mesh_key, mesh_data)
             if not meshpath:
-                message = f'Mesh export not indexed: {mesh_key}'
-                print(message)
-                failures.append(message)
+                print('Mesh export not indexed: ', mesh_key)
                 continue
 
             source_key = _asset_source_key(meshpath)
@@ -911,30 +860,12 @@ def meshes_from_mesheswapps(
             if existing_master is not None:
                 # Add missing materials before creating appearance variants.
                 if with_mats:
-                    coverage = ensure_collection_material_coverage(
+                    ensure_collection_material_coverage(
                         existing_master,
                         meshpath,
                         apps,
                         remap_depot=props.remap_depot,
-                        document_session=document_session,
-                        material_resources=material_resources,
                     )
-                    failed_materials = coverage.get("failures", ())
-                    if failed_materials:
-                        failures.append(
-                            "Material setup failed for "
-                            f"{mesh_key}: {', '.join(failed_materials)}"
-                        )
-                    unprepared_materials = coverage.get("unprepared", ())
-                    if unprepared_materials:
-                        failures.append(
-                            "Submesh materials were not prepared for "
-                            f"{mesh_key}: "
-                            + ", ".join(
-                                f"{index}:{name}"
-                                for index, name in unprepared_materials
-                            )
-                        )
                 json_apps = _json_apps_for_collection(existing_master, mesh_key)
                 _ensure_appearance_variants(
                     Masters,
@@ -946,29 +877,14 @@ def meshes_from_mesheswapps(
                 )
                 continue
             try:
-                imported_results = import_cyberpunk_glb(
+                imported_results = CP77GLBimport(
                         with_materials=with_mats,
                         remap_depot=props.remap_depot,
                         filepath=meshpath,
                         appearances=apps,
                         scripting=True,
                         generate_overrides=generate_overrides,
-                        document_session=document_session,
-                        material_resources=material_resources,
-                        transaction=transaction,
-                        bulk_import=True,
                         )
-                imported_source_count += 1
-                if not imported_results.ok:
-                    failures.extend(
-                        f"{mesh_key}: {message}"
-                        for message in imported_results.failures
-                    )
-                    continue
-                failures.extend(
-                    f"{mesh_key}: {message}"
-                    for message in imported_results.warnings
-                )
 
                 move_coll = (
                     imported_results[0].get('collection')
@@ -976,11 +892,7 @@ def meshes_from_mesheswapps(
                     else None
                 )
                 if move_coll is None:
-                    message = (
-                        f'Import produced no collection for: {mesh_key}'
-                    )
-                    print(message)
-                    failures.append(message)
+                    print(f'{bcolors.FAIL}Import produced no collection for - {mesh_key}{bcolors.ENDC}')
                     continue
 
                 if move_coll.name != groupname:
@@ -1016,40 +928,11 @@ def meshes_from_mesheswapps(
 
                 json_apps = _json_apps_for_collection(move_coll, mesh_key)
                 _ensure_appearance_variants(Masters, move_coll, mesh_key, source_key, apps, json_apps)
-            except Exception as error:
+            except Exception:
                 print('failed on ', os.path.basename(meshpath))
                 print(traceback.format_exc())
-                failures.append(
-                    f'Mesh import failed for {mesh_key}: '
-                    f'{type(error).__name__}: {error}'
-                )
     finally:
-        cache_after = (
-            material_cache_stats(include_helpers=False)
-            if with_mats
-            else None
-        )
-        release_material_cache(material_cache_acquired)
         try:
-            verbose = not get_addon_preferences().non_verbose
-        except Exception:
-            verbose = False
-        if verbose and prepared_meshes:
-            elapsed = time.perf_counter() - bulk_started
-            summary = (
-                f"Bulk mesh preparation: {imported_source_count}/"
-                f"{len(prepared_meshes)} GLBs in {elapsed:.3f}s"
-            )
-            if cache_before is not None and cache_after is not None:
-                summary += (
-                    "; material cache "
-                    f"{cache_after['exact_hits'] - cache_before['exact_hits']} exact, "
-                    f"{cache_after['prototype_hits'] - cache_before['prototype_hits']} prototype, "
-                    f"{cache_after['builds'] - cache_before['builds']} builds, "
-                    f"{cache_after['clones'] - cache_before['clones']} clones, "
-                    f"{cache_after['entries']} cached entries"
-                )
-            if failures:
-                summary += f"; {len(tuple(dict.fromkeys(failures)))} warning(s)"
-            print(summary)
-    return tuple(dict.fromkeys(failures))
+            release_json_cache(JSONTool, owns_json_cache)
+        finally:
+            release_material_cache(material_cache_acquired)

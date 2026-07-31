@@ -1,14 +1,15 @@
-import os
-from ..assetio.catalog import ResourceKind
-from ..materials.resources import load_material_document
-from ..assetio.resolver import resolve_asset_path
-from ..materials.blender.images import imageFromRelPath
-from ..materials.blender.nodes import bsdf_socket_names, create_node, loc
+from ..jsontool import JSONTool
+from ..main.common import *
 
-from .mat_common import MaterialTypeBase, populate_color_ramp
+from .mat_common import populate_color_ramp
 
 
-class Hair(MaterialTypeBase):
+class Hair:
+    def __init__(self, BasePath, image_format, ProjPath):
+        self.BasePath = BasePath
+        self.ProjPath = ProjPath
+        self.image_format = image_format
+
     def create(self, hair, Mat):
         CurMat = Mat.node_tree
         Ns = CurMat.nodes
@@ -21,11 +22,11 @@ class Hair(MaterialTypeBase):
         pBSDF.inputs['Anisotropic Rotation'].default_value = 0.75
 
         profile_reference = hair["HairProfile"] + ".json"
-        profile_path = resolve_asset_path(
+        profile_path = JSONTool.resolve_asset_path(
             profile_reference,
             roots=(self.ProjPath, self.BasePath),
             extensions=(".hp.json",),
-            warn=False,
+            warn_missing=False,
         )
         if not profile_path:
             profile_path = os.path.normpath(
@@ -34,10 +35,11 @@ class Hair(MaterialTypeBase):
                     profile_reference.replace("\\", os.sep),
                 )
             )
-        resource = load_material_document(profile_path, expected_kind=ResourceKind.HAIR_PROFILE)
-        if resource is None:
+        profile = JSONTool.jsonload(profile_path)
+        if profile is None:
             return
-        profile = resource.root
+
+        profile = profile["Data"]["RootChunk"]
 
         # JATO: this fixes some normal issues like judy's hair but it's very wrong... TODO: fix hair flipped normals issue
         # CurMat.nodes[loc('Principled BSDF')].inputs[sockets['Specular']].default_value = 0

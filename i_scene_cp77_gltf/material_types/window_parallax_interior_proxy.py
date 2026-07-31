@@ -1,10 +1,7 @@
 import os
-from ..materials.blender.images import imageFromRelPath
-from ..materials.blender.nodes import CreateShaderNodeValue, create_node, loc
-from .interior_mapping_nodegroups import andrew_willmotts_plane_interior_mapping_node_group, flipbook_function_node_group
+from ..main.common import *
+from .interior_mapping_nodegroups import *
 import re
-
-from .mat_common import MaterialTypeBase
 
 def _positive_float(value):
     if isinstance(value, dict):
@@ -34,7 +31,11 @@ def _room_atlas_aspect_ratio(data, atlas_path):
 
     return 1.0
 
-class windowParallaxIntProx(MaterialTypeBase):
+class windowParallaxIntProx:
+    def __init__(self, BasePath,image_format, ProjPath):
+        self.BasePath = BasePath
+        self.ProjPath = ProjPath
+        self.image_format = image_format
     def create(self,Data,Mat):
         CurMat = Mat.node_tree
         pBSDF=CurMat.nodes[loc('Principled BSDF')]

@@ -1,5 +1,4 @@
 import bpy
-from ...registration import register_owned_classes, unregister_owned_classes
 
 
 class DANGLE_UL_rigs(bpy.types.UIList):
@@ -95,17 +94,11 @@ classes = (
 )
 
 
-_registered_classes = []
-
-
 def register():
-    if not _registered_classes:
-        _registered_classes[:] = register_owned_classes(classes)
+    for cls in classes:
+        bpy.utils.register_class(cls)
 
 
 def unregister():
-    failures = unregister_owned_classes(reversed(_registered_classes))
-    if not failures:
-        _registered_classes.clear()
-    if failures:
-        raise RuntimeError("; ".join(f"{cls.__name__}: {error}" for cls, error in failures))
+    for cls in reversed(classes):
+        bpy.utils.unregister_class(cls)

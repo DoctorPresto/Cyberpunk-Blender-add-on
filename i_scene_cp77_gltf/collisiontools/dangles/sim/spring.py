@@ -3,8 +3,6 @@ import math
 import numpy as np
 from mathutils import Matrix, Quaternion, Vector
 
-from ....animation.blender_pose import interpolate_matrix_trs
-from ....bartmoss.dynamics import damping_force
 from . import collision, spaces
 from .frame_time import AverageFrameTimeCalculator
 
@@ -52,10 +50,22 @@ def spring_node_is_valid(sim, node_index):
     if parent_index < 0 or not sim.active_mask[parent_index]:
         return False
     for shape in sim._node_col_shapes[node_index]:
-        shape_index = int(shape.get('bone_index', -1))
+        shape_index = sim.resolve_bone_index(shape['bone_name'])
+        if shape_index is None:
+            shape_index = -1
         if shape_index < 0 or not sim.active_mask[shape_index]:
             return False
     return True
+
+
+def _lerp_transform(previous, current, factor):
+    previous_location, previous_rotation, previous_scale = previous.decompose()
+    current_location, current_rotation, current_scale = current.decompose()
+    return Matrix.LocRotScale(
+        previous_location.lerp(current_location, factor),
+        previous_rotation.slerp(current_rotation, factor),
+        previous_scale.lerp(current_scale, factor),
+    )
 
 
 def _average_frame_time(runtime, frame_time):
@@ -102,15 +112,16 @@ def _calculate_acceleration(
         np.asarray(pull_origin_ms, dtype=np.float64)
         - np.asarray(position_ms, dtype=np.float64)
     ) * float(particle.pull_force)
-    damping = damping_force(
-        velocity_ms,
-        particle.damping,
-        mass,
-        _DAMPING_ACCELERATION_LIMIT,
+    damping_force = np.asarray(velocity_ms, dtype=np.float64) * (
+        -float(particle.damping)
     )
+    damping_force_limit = _DAMPING_ACCELERATION_LIMIT * mass
+    damping_force_length = float(np.linalg.norm(damping_force))
+    if damping_force_length > damping_force_limit and damping_force_length > 0.0:
+        damping_force *= damping_force_limit / damping_force_length
     net_force = (
         pull_force
-        + damping
+        + damping_force
         + np.asarray(external_force_ms, dtype=np.float64)
     )
     return (
@@ -219,7 +230,7 @@ def step_spring_node(sim, node_index, raw_dt, time_dilation, skip_physics):
         for step_index in range(time_steps):
             previous_position = sim.pos_ms[particle_index].copy()
             frame_progress = (step_index + 1.0) / time_steps
-            parent_lerp = interpolate_matrix_trs(
+            parent_lerp = _lerp_transform(
                 previous_parent_xform, parent_xform, frame_progress
             )
             pull_origin = _pull_origin_ms(

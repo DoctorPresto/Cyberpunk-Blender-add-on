@@ -1,5 +1,4 @@
 from __future__ import annotations
-from ....blender.transactions import track_created_datablock
 
 from dataclasses import dataclass
 import os
@@ -7,7 +6,7 @@ import os
 import bpy
 
 from ...common.paths import normalize_depot_path
-from ....assetio.values import axis_value
+from ...common.values import axis_value
 
 
 REFLECTION_PROBE_PLACEMENT_CONTRACT = (
@@ -75,12 +74,12 @@ class ReflectionProbeService:
             f"{context.node_type}_{context.node_index}_"
             f"{instance_index}"
         )
-        obj = track_created_datablock("objects", bpy.data.objects.new(
+        obj = bpy.data.objects.new(
             name,
             self.session.primitive_meshes.unit_box(
                 "CP77_ReflectionProbe_UnitBox",
             ),
-        ))
+        )
         context.sector_collection.objects.link(obj)
         obj.matrix_world = context.operations.instance_matrix(
             instance,

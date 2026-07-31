@@ -1,7 +1,4 @@
-import bpy
-from ..blender.transactions import new_tracked_datablock
-from ..materials.blender.images import imageFromRelPath
-from ..materials.blender.nodes import CreateCalculateVecNormalZ, CreateShaderNodeRGB, CreateShaderNodeValue, bsdf_socket_names, create_node, loc
+from ..main.common import *
 
 
 class Skin:
@@ -14,7 +11,7 @@ class Skin:
         ng_name = "Skin 2077 1.8.0"
         if ng_name in bpy.data.node_groups:
             return bpy.data.node_groups[ng_name]
-        nodegroup = new_tracked_datablock("node_groups", type='ShaderNodeTree', name=ng_name)
+        nodegroup = bpy.data.node_groups.new(type='ShaderNodeTree', name=ng_name)
 
         nodegroup.color_tag = 'NONE'
         nodegroup.description = ""

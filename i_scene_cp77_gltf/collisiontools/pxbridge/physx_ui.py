@@ -46,7 +46,7 @@ class PhysXToolsGizmoGroup(bpy.types.GizmoGroup):
             try:
                 pos = Vector(px_s.manipulator_pos)
                 self.grab_gizmo.matrix_basis = Matrix.Translation(pos).to_4x4()
-            except Exception:
+            except:
                 pass
         else:
             self.grab_gizmo.hide = True

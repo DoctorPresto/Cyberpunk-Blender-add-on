@@ -1,5 +1,4 @@
 from __future__ import annotations
-from ....blender.transactions import track_created_datablock
 
 import traceback
 from dataclasses import dataclass
@@ -45,7 +44,6 @@ class EntityStaticMeshService:
         "transform_resolver",
         "transform_animators",
         "operations",
-        "warnings",
         "last_skip_reason",
     )
 
@@ -60,7 +58,6 @@ class EntityStaticMeshService:
         transform_resolver,
         transform_animators,
         operations: EntityStaticMeshOperations,
-        warnings: list[str],
     ):
         self.entity_collection = entity_collection
         self.appearance_name = appearance_name
@@ -70,13 +67,10 @@ class EntityStaticMeshService:
         self.transform_resolver = transform_resolver
         self.transform_animators = transform_animators
         self.operations = operations
-        self.warnings = warnings
         self.last_skip_reason = ""
 
-    def _skip(self, reason, message=""):
+    def _skip(self, reason):
         self.last_skip_reason = reason
-        if message and message not in self.warnings:
-            self.warnings.append(message)
         return None
 
     def execute(self, component):
@@ -110,11 +104,11 @@ class EntityStaticMeshService:
             )
             copied_objects = []
             if group:
-                new = track_created_datablock("collections", bpy.data.collections.new(group_name))
+                new = bpy.data.collections.new(group_name)
                 object_copy_map = {}
                 link_object = new.objects.link
                 for old_obj in operations.master_group_objects(group):
-                    obj = track_created_datablock("objects", old_obj.copy())
+                    obj = old_obj.copy()
                     object_copy_map[old_obj] = obj
                     copied_objects.append(obj)
                     link_object(obj)
@@ -134,12 +128,13 @@ class EntityStaticMeshService:
                     copied_objects,
                     object_copy_map,
                 )
+            else:
+                print('BREAK collection not found after import - ', meshname)
+
+            print('checking for collection - ', meshname)
             if new is None:
                 print('collection not found after import - ', meshname)
-                return self._skip(
-                    "master_collection_missing",
-                    f"Entity mesh master not found for {comp_name}: {meshpath}",
-                )
+                return self._skip("master_collection_missing")
 
             resolved_matrix, bind_name, slot_name, binding_type, attach_armature = (
                 self.transform_resolver.resolve_component_matrix(component)
@@ -208,25 +203,22 @@ class EntityStaticMeshService:
             if copied_objects:
                 new['depotPath'] = depot_path
                 new['meshAppearance'] = mesh_appearance
-                new['meshpath'] = 'its an entity'
+                if 'meshpath' not in new:
+                    new['meshpath'] = 'its an entity'
                 if bind_name:
                     new['bindname'] = bind_name
 
             self.entity_collection.children.link(new)
             return new
 
-        except Exception as error:
+        except Exception:
             print('Failed on ', meshname)
             print(traceback.format_exc())
             if new is not None and self.entity_collection.children.get(new.name) is None:
                 for obj in list(new.objects):
                     bpy.data.objects.remove(obj, do_unlink=True)
                 bpy.data.collections.remove(new, do_unlink=True)
-            return self._skip(
-                "execution_error",
-                f"Entity mesh component failed for {comp_name} ({meshpath}): "
-                f"{type(error).__name__}: {error}",
-            )
+            return self._skip("execution_error")
 
 
 class EntityStaticMeshHandler:
@@ -266,7 +258,6 @@ class EntitySkinnedMeshService:
         "rig",
         "component_skin_placement_info",
         "operations",
-        "warnings",
         "last_skip_reason",
     )
 
@@ -283,7 +274,6 @@ class EntitySkinnedMeshService:
         rig,
         component_skin_placement_info,
         operations: EntitySkinnedMeshOperations,
-        warnings: list[str],
     ):
         self.entity_collection = entity_collection
         self.appearance_name = appearance_name
@@ -295,13 +285,10 @@ class EntitySkinnedMeshService:
         self.rig = rig
         self.component_skin_placement_info = component_skin_placement_info
         self.operations = operations
-        self.warnings = warnings
         self.last_skip_reason = ""
 
-    def _skip(self, reason, message=""):
+    def _skip(self, reason):
         self.last_skip_reason = reason
-        if message and message not in self.warnings:
-            self.warnings.append(message)
         return None
 
     def execute(self, component):
@@ -335,14 +322,14 @@ class EntitySkinnedMeshService:
             )
             copied_objects = []
             if group:
-                new = track_created_datablock("collections", bpy.data.collections.new(group_name))
+                new = bpy.data.collections.new(group_name)
                 object_copy_map = {}
                 link_object = new.objects.link
                 for old_obj in operations.master_group_objects(group):
                     # Copied meshes retarget to the final MetaRig.
                     if getattr(old_obj, "type", None) == "ARMATURE":
                         continue
-                    obj = track_created_datablock("objects", old_obj.copy())
+                    obj = old_obj.copy()
                     object_copy_map[old_obj] = obj
                     copied_objects.append(obj)
                     link_object(obj)
@@ -362,13 +349,13 @@ class EntitySkinnedMeshService:
                     copied_objects,
                     object_copy_map,
                 )
+            else:
+                print('BREAK collection not found after import - ', meshname)
+
+            print('checking for collection - ', meshname)
             if new is None:
                 print('collection not found after import - ', meshname)
-                return self._skip(
-                    "master_collection_missing",
-                    f"Entity skinned-mesh master not found for "
-                    f"{comp_name}: {meshpath}",
-                )
+                return self._skip("master_collection_missing")
 
             resolved_matrix, bind_name, slot_name, binding_type, _attach_armature = (
                 self.transform_resolver.resolve_component_matrix(component)
@@ -431,26 +418,22 @@ class EntitySkinnedMeshService:
             if copied_objects:
                 new['depotPath'] = depot_path
                 new['meshAppearance'] = mesh_appearance
-                new['meshpath'] = 'its an entity'
+                if 'meshpath' not in new:
+                    new['meshpath'] = 'its an entity'
                 if bind_name:
                     new['bindname'] = bind_name
 
             self.entity_collection.children.link(new)
             return new
 
-        except Exception as error:
+        except Exception:
             print('Failed on ', meshname)
             print(traceback.format_exc())
             if new is not None and self.entity_collection.children.get(new.name) is None:
                 for obj in list(new.objects):
                     bpy.data.objects.remove(obj, do_unlink=True)
                 bpy.data.collections.remove(new, do_unlink=True)
-            return self._skip(
-                "execution_error",
-                f"Entity skinned-mesh component failed for "
-                f"{comp_name} ({meshpath}): "
-                f"{type(error).__name__}: {error}",
-            )
+            return self._skip("execution_error")
 
 
 class EntityMeshService:
