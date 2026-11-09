@@ -1,7 +1,6 @@
 from functools import partial
 
 import bpy
-from bpy.app.translations import pgettext
 
 from ..blender import shader_nodes
 from ..blender.transactions import new_tracked_datablock
@@ -542,7 +541,7 @@ class ParallaxScreen(MaterialTypeBase):
 
     def create(self, Data, Mat):
         CurMat = Mat.node_tree
-        pBSDF = CurMat.nodes[pgettext("Principled BSDF")]
+        pBSDF = shader_nodes.principled_bsdf(CurMat.nodes)
         sockets = bsdf_socket_names()
         pBSDF.inputs[sockets["Specular"]].default_value = 0
         values = self._values(Data)

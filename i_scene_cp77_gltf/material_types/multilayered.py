@@ -2534,7 +2534,7 @@ class Multilayered(MaterialTypeBase):
         CurMat = Mat.node_tree
         node_lookup = {n.name: n for n in CurMat.nodes}
 
-        orig_pbsdf = node_lookup.get("Principled BSDF")
+        orig_pbsdf = shader_nodes.principled_bsdf(CurMat.nodes)
 
         ml_surface = ml_surface_node_group()
         ml_surface.color_tag = "SHADER"

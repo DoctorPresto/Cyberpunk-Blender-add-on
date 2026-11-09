@@ -220,6 +220,10 @@ def socket_by_identifier(sockets, identifier):
     return next((socket for socket in sockets if socket.identifier == identifier), None)
 
 
+def principled_bsdf(nodes):
+    return next((node for node in nodes if node.type == "BSDF_PRINCIPLED"), None)
+
+
 # The colour Mix node's factor, A, B and result sockets.
 MIX_COLOR_SOCKETS = ("Factor_Float", "A_Color", "B_Color", "Result_Color")
 
