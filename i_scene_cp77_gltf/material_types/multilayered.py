@@ -2577,7 +2577,7 @@ class Multilayered(MaterialTypeBase):
         if normal is not None:
             CurMat.links.new(surface_channels.outputs["Normal"], normal)
 
-        material_output = node_lookup.get("Material Output")
+        material_output = shader_nodes.material_output(CurMat.nodes)
         if material_output is None:
             material_output = create_node(
                 CurMat.nodes, "ShaderNodeOutputMaterial", (600, 120)
